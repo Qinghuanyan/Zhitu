@@ -1,0 +1,17 @@
+## Copy this file to local.properties and update the values for your machine.
+## Do not commit local.properties.
+
+sdk.dir=D\:\\Android\\Sdk
+
+## Optional API keys
+amap.api.key=
+amap.web.api.key=
+qweather.api.key=
+qweather.host=devapi.qweather.com
+qweather.auth.token=
+
+## Optional release signing config
+storeFile=
+storePassword=
+keyAlias=
+keyPassword=
