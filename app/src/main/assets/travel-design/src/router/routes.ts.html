@@ -1,0 +1,65 @@
+import Frame21009 from "@/views/Frame21009";
+import Frame21439 from "@/views/Frame21439";
+import Frame2643 from "@/views/Frame2643";
+import Frame21805 from "@/views/Frame21805";
+import Frame22699 from "@/views/Frame22699";
+import Frame2343 from "@/views/Frame2343";
+import Frame22283 from "@/views/Frame22283";
+import Frame21 from "@/views/Frame21";
+
+export const routes = [{
+          path: "/frame21009",
+          component: Frame21009,
+          guid: "2:1009",
+        },
+{
+          path: "/frame21439",
+          component: Frame21439,
+          guid: "2:1439",
+        },
+{
+          path: "/frame2643",
+          component: Frame2643,
+          guid: "2:643",
+        },
+{
+          path: "/frame21805",
+          component: Frame21805,
+          guid: "2:1805",
+        },
+{
+          path: "/frame22699",
+          component: Frame22699,
+          guid: "2:2699",
+        },
+{
+          path: "/frame2343",
+          component: Frame2343,
+          guid: "2:343",
+        },
+{
+          path: "/frame22283",
+          component: Frame22283,
+          guid: "2:2283",
+        },
+{
+          path: "/",
+          component: Frame21,
+          guid: "2:1",
+        }];
+
+
+export const guidPathMap = new Map(
+  routes.map((item) => [item.guid, item.path])
+);
+export const pathGuidMap = new Map(
+  routes.map((item) => [item.path, item.guid])
+);
+
+export const getPathByGuid = (guid: string) => {
+  return guidPathMap.get(guid) || "";
+};
+
+export const getGuidByPath = (path: string) => {
+  return pathGuidMap.get(path) || "";
+};
