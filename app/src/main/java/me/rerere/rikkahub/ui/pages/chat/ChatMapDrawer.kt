@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.chat
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
@@ -78,7 +79,7 @@ import java.util.Locale
 
 private const val TAG = "ChatMapDrawer"
 private const val AMAP_PACKAGE_NAME = "com.autonavi.minimap"
-private const val DEVICE_LOCATION_LABEL = "设备定位"
+private const val DEVICE_LOCATION_LABEL = "当前位置"
 
 private data class LocationPoint(
     val latLng: LatLng,
@@ -142,7 +143,7 @@ fun ChatMapDrawerContent(
         val map = remember(mapView) { mapView.map }
         val destinationMarker = remember(map) { arrayOfNulls<Marker>(1) }
         val currentLocationMarker = remember(map) { arrayOfNulls<Marker>(1) }
-        val travelMarkers = remember(map) { mutableListOf<Marker>() }
+        val travelMarkers = remember(map) { mutableMapOf<String, Marker>() }
         val markerPoiIndex = remember(map) { mutableMapOf<String, TravelPoi>() }
         val hasInitialFix = remember(map) { booleanArrayOf(false) }
         val lastAutoFocusSignature = remember(map) { arrayOfNulls<String>(1) }
@@ -187,6 +188,10 @@ fun ChatMapDrawerContent(
                     currentLocation = point
                     locationError = null
                     locating = false
+                    Log.i(
+                        TAG,
+                        "Location success lat=${location.latitude}, lon=${location.longitude}, poi=${location.poiName}, address=${location.address}, detail=${location.locationDetail}"
+                    )
                     if (!hasInitialFix[0] && shouldPreferDeviceLocation) {
                         hasInitialFix[0] = true
                         map?.animateCamera(CameraUpdateFactory.newLatLngZoom(point.latLng, 16f))
@@ -195,7 +200,10 @@ fun ChatMapDrawerContent(
                 } else if (location != null) {
                     locating = false
                     locationError = "[${location.errorCode}] ${location.errorInfo}\n${location.locationDetail}"
-                    Log.w(TAG, "Location error: ${location.errorCode} ${location.errorInfo}")
+                    Log.w(
+                        TAG,
+                        "Location error code=${location.errorCode}, info=${location.errorInfo}, detail=${location.locationDetail}, lat=${location.latitude}, lon=${location.longitude}"
+                    )
                     locationClient.stopLocation()
                 }
             }
@@ -370,7 +378,7 @@ private fun ChatMapHost(
     destinationMarker: Array<Marker?>,
     travelPois: List<TravelPoi>,
     highlightPoiId: String?,
-    travelMarkers: MutableList<Marker>,
+    travelMarkers: MutableMap<String, Marker>,
     lastAutoFocusSignature: Array<String?>,
     markerPoiIndex: MutableMap<String, TravelPoi>,
     onMapGestureStateChanged: (Boolean) -> Unit,
@@ -541,36 +549,47 @@ private fun syncTravelPoiMarkers(
     context: Context,
     mapWidth: Int,
     mapHeight: Int,
-    travelMarkers: MutableList<Marker>,
+    travelMarkers: MutableMap<String, Marker>,
     lastAutoFocusSignature: Array<String?>,
     markerPoiIndex: MutableMap<String, TravelPoi>,
     travelPois: List<TravelPoi>,
     highlightPoiId: String?,
 ) {
-    travelMarkers.forEach { it.remove() }
-    travelMarkers.clear()
+    val visiblePois = travelPois.filter { it.lat != null && it.lon != null }
+    val stalePoiIds = travelMarkers.keys - visiblePois.mapTo(mutableSetOf()) { it.id }
+    stalePoiIds.forEach { poiId ->
+        travelMarkers.remove(poiId)?.remove()
+    }
     markerPoiIndex.clear()
 
-    travelPois.forEach { poi ->
+    visiblePois.forEach { poi ->
         val lat = poi.lat ?: return@forEach
         val lon = poi.lon ?: return@forEach
-        val marker = map.addMarker(
-            MarkerOptions()
-                .position(LatLng(lat, lon))
-                .title(poi.name)
-                .snippet(poi.address.ifBlank { poi.category })
-                .icon(
-                    BitmapDescriptorFactory.defaultMarker(
-                        if (poi.id == highlightPoiId) {
-                            BitmapDescriptorFactory.HUE_ORANGE
-                        } else {
-                            BitmapDescriptorFactory.HUE_RED
-                        }
-                    )
-                )
-        ) ?: return@forEach
-        markerPoiIndex[marker.id] = poi
-        travelMarkers.add(marker)
+        val position = LatLng(lat, lon)
+        val snippet = poi.address.ifBlank { poi.category }
+        val markerHue = if (poi.id == highlightPoiId) {
+            BitmapDescriptorFactory.HUE_ORANGE
+        } else {
+            BitmapDescriptorFactory.HUE_RED
+        }
+        val marker = travelMarkers[poi.id]
+        if (marker == null) {
+            val newMarker = map.addMarker(
+                MarkerOptions()
+                    .position(position)
+                    .title(poi.name)
+                    .snippet(snippet)
+                    .icon(BitmapDescriptorFactory.defaultMarker(markerHue))
+            ) ?: return@forEach
+            travelMarkers[poi.id] = newMarker
+            markerPoiIndex[newMarker.id] = poi
+        } else {
+            marker.position = position
+            marker.title = poi.name
+            marker.snippet = snippet
+            marker.setIcon(BitmapDescriptorFactory.defaultMarker(markerHue))
+            markerPoiIndex[marker.id] = poi
+        }
     }
 
     val signature = buildString {
@@ -599,14 +618,14 @@ private fun syncTravelPoiMarkers(
     if (signature == lastAutoFocusSignature[0]) return
 
     val highlightMarker = highlightPoiId?.let { target ->
-        travelMarkers.firstOrNull { markerPoiIndex[it.id]?.id == target }
+        travelMarkers[target]
     }
     when {
         highlightMarker != null -> {
             focusLatLngWithOffset(map, highlightMarker.position)
         }
         travelMarkers.size == 1 -> {
-            val singleMarker = travelMarkers.first()
+            val singleMarker = travelMarkers.values.first()
             val currentLatLng = currentLocation?.latLng
             if (currentLatLng != null && isLocationNearTravelPois(currentLatLng, listOf(singleMarker.position))) {
                 val boundsBuilder = LatLngBounds.builder()
@@ -624,9 +643,9 @@ private fun syncTravelPoiMarkers(
         }
         else -> {
             val boundsBuilder = LatLngBounds.builder()
-            travelMarkers.forEach { boundsBuilder.include(it.position) }
+            travelMarkers.values.forEach { boundsBuilder.include(it.position) }
             val currentLatLng = currentLocation?.latLng
-            if (currentLatLng != null && isLocationNearTravelPois(currentLatLng, travelMarkers.map { it.position })) {
+            if (currentLatLng != null && isLocationNearTravelPois(currentLatLng, travelMarkers.values.map { it.position })) {
                 boundsBuilder.include(currentLatLng)
             }
             focusBoundsWithOffset(
@@ -841,39 +860,59 @@ private fun ChatMapBottomPanel(
 }
 
 private fun configureLocationClient(locationClient: AMapLocationClient) {
+    val allowMockLocation = isProbablyRunningOnEmulator()
     locationClient.setLocationOption(
         AMapLocationClientOption().apply {
             isOnceLocation = true
             isOnceLocationLatest = true
             isNeedAddress = true
-            isGpsFirst = true
+            isGpsFirst = !allowMockLocation
             gpsFirstTimeout = 15_000
             locationMode = AMapLocationClientOption.AMapLocationMode.Hight_Accuracy
             locationPurpose = AMapLocationClientOption.AMapLocationPurpose.Transport
             httpTimeOut = 15_000
             isLocationCacheEnable = false
-            isMockEnable = false
+            isMockEnable = allowMockLocation
         }
     )
+    Log.i(TAG, "configureLocationClient allowMockLocation=$allowMockLocation")
 }
 
 private fun buildLocationPoint(location: AMapLocation): LocationPoint {
     val coordinateText = String.format(Locale.US, "%.5f, %.5f", location.latitude, location.longitude)
+    val poiName = location.poiName?.trim().orEmpty()
+    val address = location.address?.trim().orEmpty()
     return LocationPoint(
         latLng = LatLng(location.latitude, location.longitude),
-        title = location.poiName,
+        title = poiName.ifBlank { DEVICE_LOCATION_LABEL },
         snippet = buildString {
-            append("设备定位")
-            location.poiName?.takeIf { it.isNotBlank() }?.let {
-                if (isNotBlank()) append(" 路 ")
-                append(it)
-            }
-            location.address?.takeIf { it.isNotBlank() }?.let {
+            poiName.takeIf { it.isNotBlank() }?.let { append(it) }
+            address.takeIf { it.isNotBlank() }?.let {
                 if (isNotBlank()) append(" · ")
                 append(it)
             }
         }.ifBlank { "$DEVICE_LOCATION_LABEL · $coordinateText" },
     )
+}
+
+private fun isProbablyRunningOnEmulator(): Boolean {
+    val fingerprint = Build.FINGERPRINT.lowercase(Locale.US)
+    val model = Build.MODEL.lowercase(Locale.US)
+    val manufacturer = Build.MANUFACTURER.lowercase(Locale.US)
+    val brand = Build.BRAND.lowercase(Locale.US)
+    val device = Build.DEVICE.lowercase(Locale.US)
+    val product = Build.PRODUCT.lowercase(Locale.US)
+    return fingerprint.startsWith("generic") ||
+        fingerprint.contains("emulator") ||
+        fingerprint.contains("virtual") ||
+        model.contains("sdk_gphone") ||
+        model.contains("emulator") ||
+        model.contains("android sdk built for") ||
+        manufacturer.contains("genymotion") ||
+        (brand.startsWith("generic") && device.startsWith("generic")) ||
+        product.contains("sdk") ||
+        product.contains("emulator") ||
+        product.contains("simulator")
 }
 
 private fun focusLatLngWithOffset(

@@ -1,0 +1,2613 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="filename" content="ai_travel_planner.html">
+    <title>AI旅行规划系统 - 绿洲Oasis</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'brand-light': '#F0FDF4',
+                        'brand-green': '#10B981',
+                        'brand-cyan': '#06B6D4',
+                        'brand-purple': '#A855F7',
+                        'dark-bg': '#0F172A',
+                    },
+                    boxShadow: {
+                        'neon-green': '0 0 12px rgba(16, 185, 129, 0.6)',
+                        'neon-cyan': '0 0 12px rgba(6, 182, 212, 0.6)',
+                        'neon-purple': '0 0 12px rgba(168, 85, 247, 0.5)',
+                        'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.05)',
+                    },
+                    backgroundImage: {
+                        'origami-gradient': 'linear-gradient(135deg, #10B981 0%, #06B6D4 50%, #A855F7 100%)',
+                        'card-gradient': 'linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(240,253,244,0.6) 100%)',
+                    },
+                    animation: {
+                        'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'slide-up': 'slideUp 0.3s ease-out forwards',
+                        'slide-in-bottom': 'slideInBottom 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'fade-in': 'fadeIn 0.3s ease-out forwards',
+                        'shimmer': 'shimmer 1.5s infinite',
+                    },
+                    keyframes: {
+                        pulseGlow: {
+                            '0%, 100%': { boxShadow: '0 0 10px rgba(16,185,129,0.4)', borderColor: 'rgba(16,185,129,0.4)' },
+                            '50%': { boxShadow: '0 0 20px rgba(16,185,129,0.8)', borderColor: 'rgba(16,185,129,0.8)' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        slideInBottom: {
+                            '0%': { opacity: '0', transform: 'translateY(100%)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        shimmer: {
+                            '0%': { backgroundPosition: '-200% 0' },
+                            '100%': { backgroundPosition: '200% 0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #e2e8f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Force 375x812 container */
+        #app-container {
+            width: 375px;
+            height: 812px;
+            background-color: #FAFAFA;
+            position: relative;
+            overflow: hidden;
+            border-radius: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            border: 8px solid #1E293B;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Hide scrollbar but allow scroll */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(255, 255, 255, 0.8);
+        }
+
+        .chat-bubble-ai {
+            background: linear-gradient(135deg, #ffffff 0%, #F0FDF4 100%);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.05);
+            border-radius: 20px 20px 20px 4px;
+        }
+
+        .chat-bubble-user {
+            background: linear-gradient(135deg, #10B981 0%, #06B6D4 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.2);
+            border-radius: 20px 20px 4px 20px;
+        }
+
+        /* Quick tab active state */
+        .quick-tab.active {
+            background: linear-gradient(135deg, #10B981 0%, #06B6D4 50%, #A855F7 100%);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.45);
+        }
+
+        /* Skeleton shimmer */
+        .skeleton-block {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 8px;
+        }
+
+        /* Horizontal scroll snapping */
+        .snap-scroll {
+            scroll-snap-type: x mandatory;
+        }
+        .snap-scroll > * {
+            scroll-snap-align: start;
+        }
+
+        /* Bottom sheet overlay */
+        #map-fullscreen, #hotel-sheet-overlay, #itinerary-full-overlay, #preference-overlay, #profile-overlay {
+            transition: opacity 0.3s ease;
+        }
+
+        /* Preference chip */
+        .pref-chip {
+            transition: all 0.2s ease;
+            border: 1.5px solid #e5e7eb;
+        }
+        .pref-chip.active {
+            background: linear-gradient(135deg, #10B981, #06B6D4, #A855F7);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 4px 12px rgba(16,185,129,0.3);
+        }
+
+        /* Weather day card selected state */
+        .weather-day-card.selected {
+            background: rgba(255,255,255,0.25);
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.4);
+        }
+
+        /* Food filter chip active */
+        .food-chip.active {
+            background: linear-gradient(135deg, #10B981, #06B6D4);
+            color: white;
+            border-color: transparent;
+        }
+
+        /* Progress ring */
+        .progress-ring-circle {
+            transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        /* Packing checkbox */
+        .pack-item.checked .pack-label {
+            text-decoration: line-through;
+            color: #9ca3af;
+        }
+        .pack-item.checked {
+            opacity: 0.6;
+        }
+
+        /* Swipe carousel */
+        .carousel-inner {
+            transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        /* Map spot bubble */
+        .spot-bubble {
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+
+        /* Activity progress bar */
+        .activity-bar-fill {
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .zhitu-markdown h1,
+        .zhitu-markdown h2,
+        .zhitu-markdown h3 {
+            color: #111827;
+            font-weight: 700;
+            line-height: 1.4;
+            margin: 0.35rem 0 0.5rem;
+        }
+
+        .zhitu-markdown h1 { font-size: 1rem; }
+        .zhitu-markdown h2 { font-size: 0.95rem; }
+        .zhitu-markdown h3 { font-size: 0.9rem; }
+
+        .zhitu-markdown p {
+            margin: 0.35rem 0;
+            line-height: 1.8;
+        }
+
+        .zhitu-markdown ul,
+        .zhitu-markdown ol {
+            margin: 0.45rem 0;
+            padding-left: 1.1rem;
+        }
+
+        .zhitu-markdown li {
+            margin: 0.2rem 0;
+            line-height: 1.7;
+        }
+
+        .zhitu-markdown blockquote {
+            margin: 0.55rem 0;
+            padding: 0.1rem 0 0.1rem 0.75rem;
+            border-left: 3px solid rgba(16, 185, 129, 0.45);
+            color: #4b5563;
+        }
+
+        .zhitu-markdown code {
+            background: rgba(15, 23, 42, 0.06);
+            border-radius: 0.4rem;
+            padding: 0.1rem 0.35rem;
+            font-size: 0.85em;
+        }
+
+        .zhitu-markdown a {
+            color: #06B6D4;
+            text-decoration: underline;
+        }
+
+        #profile-overlay {
+            transition: opacity 0.3s ease;
+        }
+
+        .profile-tab.active {
+            background: linear-gradient(135deg, #10B981 0%, #06B6D4 50%, #A855F7 100%);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 4px 12px rgba(16,185,129,0.3);
+        }
+
+        .history-session-card {
+            border-left: 3px solid transparent;
+            border-image: linear-gradient(to bottom, #10B981, #06B6D4, #A855F7) 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <!-- Header / Top Bar -->
+        <header class="glass-panel px-4 py-4 flex items-center justify-between z-10 relative">
+            <div class="flex items-center gap-2.5">
+                <div id="user-avatar-btn" class="relative w-9 h-9 rounded-full p-[2px] cursor-pointer hover:scale-105 transition-transform flex-shrink-0" style="background:linear-gradient(135deg,#10B981,#06B6D4,#A855F7)">
+                    <div class="w-full h-full bg-white rounded-full overflow-hidden">
+                        <div class="w-full h-full rounded-full bg-white flex items-center justify-center text-[10px] font-bold text-brand-green">ME</div>
+                    </div>
+                </div>
+                <div class="relative w-10 h-10 rounded-full p-[2px] bg-origami-gradient animate-pulse-glow cursor-pointer" id="ai-avatar-btn">
+                    <div class="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden">
+                        <img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover opacity-90" alt="AI Avatar">
+                    </div>
+                </div>
+                <div>
+                    <h1 class="font-bold text-gray-800 text-sm tracking-wide">OASIS AI</h1>
+                    <p class="text-[10px] text-brand-green font-medium flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse"></span> 在线守护
+                    </p>
+                </div>
+            </div>
+            <div id="header-map-btn" class="w-8 h-8 flex items-center justify-center rounded-lg bg-origami-gradient opacity-80 shadow-neon-cyan cursor-pointer hover:opacity-100 transition-opacity">
+                <i data-lucide="map" class="w-4 h-4 text-white pointer-events-none"></i>
+            </div>
+        </header>
+
+        <!-- Main Chat Flow Area -->
+        <main id="chat-container" class="flex-1 overflow-y-auto no-scrollbar p-5 pb-28 flex flex-col gap-5 relative z-10">
+        </main>
+
+        <!-- Composite Bottom Area: Quick Tabs + Input -->
+        <div class="absolute bottom-0 left-0 right-0 z-20 glass-panel border-t border-white/50">
+            <!-- Quick shortcut chips row -->
+            <div class="overflow-x-auto no-scrollbar flex gap-2 px-4 pt-3 pb-2">
+                <button class="quick-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-200 bg-white/80 text-gray-500 transition-all duration-200 hover:border-brand-green/40 hover:text-brand-green" data-tab="itinerary">
+                    <i data-lucide="calendar" class="w-3.5 h-3.5 pointer-events-none"></i>
+                    <span>行程</span>
+                </button>
+                <button class="quick-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-200 bg-white/80 text-gray-500 transition-all duration-200 hover:border-brand-cyan/40 hover:text-brand-cyan" data-tab="hotel">
+                    <i data-lucide="building-2" class="w-3.5 h-3.5 pointer-events-none"></i>
+                    <span>住宿</span>
+                </button>
+                <button class="quick-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-200 bg-white/80 text-gray-500 transition-all duration-200 hover:border-brand-green/40 hover:text-brand-green" data-tab="food">
+                    <i data-lucide="utensils" class="w-3.5 h-3.5 pointer-events-none"></i>
+                    <span>餐饮</span>
+                </button>
+                <button class="quick-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-200 bg-white/80 text-gray-500 transition-all duration-200 hover:border-brand-purple/40 hover:text-brand-purple" data-tab="activity">
+                    <i data-lucide="zap" class="w-3.5 h-3.5 pointer-events-none"></i>
+                    <span>推荐</span>
+                </button>
+            </div>
+            <!-- Input row -->
+            <div class="px-4 pb-4">
+                <div class="glass-panel rounded-full p-1.5 flex items-center gap-2 shadow-lg border border-white/50">
+                            <div id="mic-btn" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-brand-green/10 hover:text-brand-green transition-all duration-200">
+                        <i data-lucide="mic" class="w-4 h-4 pointer-events-none"></i>
+                    </div>
+                    <input type="text" id="chat-input" placeholder="输入你想去的地方..." class="flex-1 bg-transparent border-none outline-none text-sm text-gray-700 placeholder-gray-400 px-2">
+                    <button id="send-btn" class="w-9 h-9 rounded-full bg-brand-green flex items-center justify-center text-white shadow-neon-green hover:scale-105 transition-transform">
+                        <i data-lucide="arrow-up" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== MAP FULLSCREEN OVERLAY ====== -->
+        <div id="map-fullscreen" class="absolute inset-0 z-50 hidden flex-col" style="background:#0F172A;">
+            <div class="relative flex-1 overflow-hidden">
+                <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=800&auto=format&fit=crop" class="w-full h-full object-cover opacity-80">
+                <!-- Map pins overlay -->
+                <div class="absolute inset-0">
+                    <!-- Pin 1 -->
+                    <div class="absolute" style="top:28%;left:45%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-green rounded-full flex items-center justify-center shadow-neon-green cursor-pointer border-2 border-white" data-spot="0">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Pin 2 -->
+                    <div class="absolute" style="top:42%;left:62%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-cyan rounded-full flex items-center justify-center shadow-neon-cyan cursor-pointer border-2 border-white" data-spot="1">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Pin 3 -->
+                    <div class="absolute" style="top:55%;left:30%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-purple rounded-full flex items-center justify-center shadow-neon-purple cursor-pointer border-2 border-white" data-spot="2">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Pin 4 -->
+                    <div class="absolute" style="top:35%;left:72%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-green rounded-full flex items-center justify-center shadow-neon-green cursor-pointer border-2 border-white" data-spot="3">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Pin 5 -->
+                    <div class="absolute" style="top:65%;left:55%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-cyan rounded-full flex items-center justify-center shadow-neon-cyan cursor-pointer border-2 border-white" data-spot="4">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Spot bubble (dynamic) -->
+                    <div id="spot-bubble" class="hidden absolute bg-white rounded-xl px-3 py-2 shadow-xl border border-white/80 min-w-[140px] z-10" style="top:15%;left:50%;transform:translateX(-50%)">
+                        <p id="spot-bubble-name" class="text-xs font-bold text-gray-800"></p>
+                        <div class="flex items-center gap-1 mt-0.5">
+                            <i data-lucide="star" class="w-3 h-3 text-yellow-400 fill-current"></i>
+                            <span id="spot-bubble-rating" class="text-[10px] text-gray-500"></span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Close button -->
+                <button id="map-fullscreen-close" class="absolute top-4 right-4 w-9 h-9 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/70 transition-colors z-20">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+                <!-- Title bar -->
+                <div class="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-full text-white text-xs font-semibold">
+                    <span>东京 · 5个景点</span>
+                </div>
+            </div>
+            <!-- Bottom sliding spots panel -->
+            <div class="bg-dark-bg/95 backdrop-blur-xl rounded-t-3xl px-4 pt-4 pb-6" style="min-height:220px">
+                <div class="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4"></div>
+                <h4 class="text-white text-xs font-bold mb-3 flex items-center gap-2">
+                    <i data-lucide="map-pin" class="w-3.5 h-3.5 text-brand-green"></i> 已标记景点
+                </h4>
+                <div class="space-y-2" id="spots-list">
+                    <!-- Injected by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== HOTEL BOTTOM SHEET ====== -->
+        <div id="hotel-sheet-overlay" class="absolute inset-0 z-50 hidden" style="background:rgba(0,0,0,0.5);">
+            <div id="hotel-sheet" class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl overflow-hidden" style="max-height:88%;">
+                <!-- Drag handle -->
+                <div class="flex justify-center pt-3 pb-1">
+                    <div class="w-10 h-1 bg-gray-200 rounded-full"></div>
+                </div>
+                <!-- Image carousel -->
+                <div class="relative overflow-hidden" style="height:180px">
+                    <div class="carousel-inner flex" id="hotel-carousel-inner">
+                        <img src="https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=600&auto=format&fit=crop" class="w-full flex-shrink-0 object-cover" style="height:180px">
+                        <img src="https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=600&auto=format&fit=crop" class="w-full flex-shrink-0 object-cover" style="height:180px">
+                        <img src="https://images.unsplash.com/photo-1631049307264-da0ec9d70304?q=80&w=600&auto=format&fit=crop" class="w-full flex-shrink-0 object-cover" style="height:180px">
+                    </div>
+                    <!-- Carousel dots -->
+                    <div class="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+                        <div class="carousel-dot w-4 h-1.5 bg-white rounded-full opacity-100" data-index="0"></div>
+                        <div class="carousel-dot w-1.5 h-1.5 bg-white rounded-full opacity-50" data-index="1"></div>
+                        <div class="carousel-dot w-1.5 h-1.5 bg-white rounded-full opacity-50" data-index="2"></div>
+                    </div>
+                    <!-- Arrows -->
+                    <button id="carousel-prev" class="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 bg-black/40 rounded-full flex items-center justify-center text-white hover:bg-black/60">
+                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                    </button>
+                    <button id="carousel-next" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 bg-black/40 rounded-full flex items-center justify-center text-white hover:bg-black/60">
+                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    </button>
+                    <!-- Tag -->
+                    <div class="absolute top-3 left-3 bg-brand-green text-white text-[10px] px-2 py-0.5 rounded-full font-semibold">AI推荐</div>
+                </div>
+                <!-- Sheet content -->
+                <div class="p-4 overflow-y-auto no-scrollbar" style="max-height:calc(88vh - 180px - 2rem)">
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <h3 class="font-bold text-gray-900 text-base" id="sheet-hotel-name">云端秘境生态酒店</h3>
+                            <div class="flex items-center gap-1.5 mt-1">
+                                <div class="flex items-center gap-0.5 text-yellow-500">
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                </div>
+                                <span class="text-xs text-gray-500">4.9 (328条评价)</span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-brand-purple font-bold text-xl" id="sheet-hotel-price">¥899</span>
+                            <span class="text-[10px] text-gray-400">/晚</span>
+                        </div>
+                    </div>
+                    <!-- Amenities -->
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium">
+                            <i data-lucide="wifi" class="w-3 h-3 text-brand-cyan"></i> 免费WiFi
+                        </span>
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium">
+                            <i data-lucide="coffee" class="w-3 h-3 text-brand-green"></i> 含早餐
+                        </span>
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium">
+                            <i data-lucide="car" class="w-3 h-3 text-brand-purple"></i> 免费停车
+                        </span>
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium">
+                            <i data-lucide="dumbbell" class="w-3 h-3 text-gray-400"></i> 健身房
+                        </span>
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium">
+                            <i data-lucide="waves" class="w-3 h-3 text-brand-cyan"></i> 游泳池
+                        </span>
+                    </div>
+                    <!-- Review snippet -->
+                    <div class="bg-gray-50 rounded-xl p-3 mb-4">
+                        <p class="text-[11px] text-gray-600 leading-relaxed italic">"环境太美了！推开窗就是连绵的山脉，AI 推荐真的精准，服务细致入微，早餐种类丰富。强烈推荐！"</p>
+                        <p class="text-[10px] text-gray-400 mt-1.5">— 来自用户 Mia · 2024年12月入住</p>
+                    </div>
+                    <!-- Room type -->
+                    <div class="border border-gray-100 rounded-xl p-3 mb-4">
+                        <h4 class="text-xs font-bold text-gray-800 mb-2">房型详情</h4>
+                        <div class="flex justify-between items-center text-xs">
+                            <div>
+                                <p class="font-medium text-gray-700">山景豪华大床房</p>
+                                <p class="text-gray-400 text-[10px]">35㎡ · 可住2人 · 可取消</p>
+                            </div>
+                            <span class="text-brand-purple font-bold">¥899/晚</span>
+                        </div>
+                    </div>
+                    <!-- Action buttons -->
+                    <div class="flex gap-2">
+                        <button id="hotel-favorite-btn" data-favorited="false" class="flex-1 py-3 rounded-2xl border border-gray-200 text-xs font-semibold text-gray-500 flex items-center justify-center gap-1.5 hover:bg-gray-50 transition-colors">
+                            <i data-lucide="heart" class="w-4 h-4 text-red-400"></i> <span id="hotel-fav-label">收藏</span>
+                        </button>
+                        <button id="hotel-book-btn" class="flex-[2] py-3 rounded-2xl text-white text-xs font-bold bg-origami-gradient shadow-neon-green hover:opacity-90 transition-opacity">
+                            立即预订
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== ITINERARY FULL OVERLAY ====== -->
+        <div id="itinerary-full-overlay" class="absolute inset-0 z-50 hidden flex-col bg-gray-50">
+            <div class="glass-panel px-5 py-4 flex items-center justify-between border-b border-white/60">
+                <div>
+                    <h2 class="font-bold text-gray-900 text-sm">东京三日深度游</h2>
+                    <p class="text-[10px] text-gray-400">2025.03.15 – 03.17</p>
+                </div>
+                <button id="itinerary-overlay-close" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <i data-lucide="x" class="w-4 h-4 text-gray-600"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar p-4 pb-6 space-y-4">
+                <!-- Day 1 -->
+                <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                    <div class="flex items-center gap-2 mb-3 day-block cursor-pointer hover:bg-brand-cyan/5 rounded-xl px-1 -mx-1 transition-colors" data-day="1">
+                        <div class="w-7 h-7 rounded-xl bg-brand-cyan/10 flex items-center justify-center">
+                            <span class="text-[10px] font-bold text-brand-cyan">D1</span>
+                        </div>
+                        <h4 class="text-xs font-bold text-brand-cyan">传统与现代的碰撞</h4>
+                        <span class="ml-auto text-[10px] text-gray-400">03/15</span>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">09:00</span>
+                            <div class="flex-1 bg-gray-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">浅草寺祈福 &amp; 仲见世商店街</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">建议游览 2h · 免费入场</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">14:00</span>
+                            <div class="flex-1 bg-gray-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">秋叶原二次元朝圣</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">建议游览 3h · 购物天堂</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">19:30</span>
+                            <div class="flex-1 bg-gray-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">东京塔夜景观光</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">门票 ¥180 · 建议 1.5h</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Day 2 -->
+                <div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                    <div class="flex items-center gap-2 mb-3 day-block cursor-pointer hover:bg-brand-green/5 rounded-xl px-1 -mx-1 transition-colors" data-day="2">
+                        <div class="w-7 h-7 rounded-xl bg-brand-green/10 flex items-center justify-center">
+                            <span class="text-[10px] font-bold text-brand-green">D2</span>
+                        </div>
+                        <h4 class="text-xs font-bold text-brand-green">潮流文化探索</h4>
+                        <span class="ml-auto text-[10px] text-gray-400">03/16</span>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">09:30</span>
+                            <div class="flex-1 bg-gray-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">涩谷十字路口打卡</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">全球最繁忙路口 · 免费</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">13:00</span>
+                            <div class="flex-1 bg-gray-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">原宿竹下通 &amp; 表参道漫步</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">时尚发源地 · 建议 3h</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">18:00</span>
+                            <div class="flex-1 bg-gray-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">新宿居酒屋晚宴</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">人均 ¥150 · 沉浸式体验</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Day 3 (brand-purple) -->
+                <div class="bg-white rounded-2xl p-4 border border-purple-100 shadow-sm">
+                    <div class="flex items-center gap-2 mb-3 day-block cursor-pointer hover:bg-brand-purple/5 rounded-xl px-1 -mx-1 transition-colors" data-day="3">
+                        <div class="w-7 h-7 rounded-xl bg-brand-purple/10 flex items-center justify-center">
+                            <span class="text-[10px] font-bold text-brand-purple">D3</span>
+                        </div>
+                        <h4 class="text-xs font-bold text-brand-purple">自然与宁静之旅</h4>
+                        <span class="ml-auto text-[10px] text-gray-400">03/17</span>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">08:00</span>
+                            <div class="flex-1 bg-purple-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">早起上野公园晨走</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">春日樱花盛开 · 免费</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">11:00</span>
+                            <div class="flex-1 bg-purple-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">东京国立博物馆</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">门票 ¥120 · 建议 2.5h</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-3 items-start">
+                            <span class="text-[10px] text-gray-400 w-10 flex-shrink-0 mt-0.5">15:00</span>
+                            <div class="flex-1 bg-purple-50 rounded-lg px-3 py-2">
+                                <p class="text-xs font-medium text-gray-700">汐留 &amp; 新桥自由行 + 免税购物</p>
+                                <p class="text-[10px] text-gray-400 mt-0.5">返程前最后采购 · 退税享优惠</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Export actions -->
+                <div class="flex gap-2 pt-1">
+                    <button id="itinerary-export-btn" class="flex-1 py-3 rounded-2xl bg-brand-light text-brand-green text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-brand-green hover:text-white transition-all active:scale-95">
+                        <i data-lucide="file-text" class="w-3.5 h-3.5"></i> 导出 PDF
+                    </button>
+                    <button id="itinerary-share-btn" class="flex-1 py-3 rounded-2xl bg-brand-purple/10 text-brand-purple text-xs font-semibold flex items-center justify-center gap-1.5 hover:bg-brand-purple hover:text-white transition-all active:scale-95">
+                        <i data-lucide="share-2" class="w-3.5 h-3.5"></i> 分享好友
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== PREFERENCE BOTTOM SHEET ====== -->
+        <div id="preference-overlay" class="absolute inset-0 z-50 hidden" style="background:rgba(0,0,0,0.5);">
+            <div id="preference-sheet" class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl overflow-hidden">
+                <!-- Drag handle -->
+                <div class="flex justify-center pt-3 pb-1">
+                    <div class="w-10 h-1 bg-gray-200 rounded-full"></div>
+                </div>
+                <!-- Header -->
+                <div class="px-5 pt-2 pb-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h3 class="font-bold text-gray-900 text-sm">旅行偏好设置</h3>
+                        <p class="text-[10px] text-gray-400 mt-0.5">选择您的旅行风格（可多选）</p>
+                    </div>
+                    <button id="preference-sheet-close" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                        <i data-lucide="x" class="w-4 h-4 text-gray-600"></i>
+                    </button>
+                </div>
+                <!-- Chips -->
+                <div class="px-5 py-4">
+                    <div class="grid grid-cols-2 gap-3 mb-5">
+                        <button class="pref-chip flex items-center gap-2 px-4 py-3 rounded-2xl bg-gray-50 text-sm text-gray-600 font-medium" data-pref="nature">
+                            <span class="text-lg">🌿</span>
+                            <div class="text-left">
+                                <p class="text-xs font-semibold text-gray-800">自然风光</p>
+                                <p class="text-[10px] text-gray-400">山海·森林·国家公园</p>
+                            </div>
+                        </button>
+                        <button class="pref-chip flex items-center gap-2 px-4 py-3 rounded-2xl bg-gray-50 text-sm text-gray-600 font-medium" data-pref="culture">
+                            <span class="text-lg">🏯</span>
+                            <div class="text-left">
+                                <p class="text-xs font-semibold text-gray-800">城市人文</p>
+                                <p class="text-[10px] text-gray-400">博物馆·古迹·建筑</p>
+                            </div>
+                        </button>
+                        <button class="pref-chip flex items-center gap-2 px-4 py-3 rounded-2xl bg-gray-50 text-sm text-gray-600 font-medium" data-pref="food">
+                            <span class="text-lg">🍜</span>
+                            <div class="text-left">
+                                <p class="text-xs font-semibold text-gray-800">美食探店</p>
+                                <p class="text-[10px] text-gray-400">米其林·街头小吃</p>
+                            </div>
+                        </button>
+                        <button class="pref-chip flex items-center gap-2 px-4 py-3 rounded-2xl bg-gray-50 text-sm text-gray-600 font-medium" data-pref="extreme">
+                            <span class="text-lg">🧗</span>
+                            <div class="text-left">
+                                <p class="text-xs font-semibold text-gray-800">极限运动</p>
+                                <p class="text-[10px] text-gray-400">跳伞·冲浪·攀岩</p>
+                            </div>
+                        </button>
+                    </div>
+                    <button id="preference-save-btn" class="w-full py-3.5 rounded-2xl text-white text-sm font-bold bg-origami-gradient shadow-neon-green hover:opacity-90 transition-opacity">
+                        保存偏好设置
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="profile-overlay" class="absolute inset-0 z-50 hidden flex-col bg-gray-50">
+            <div class="glass-panel px-5 py-4 flex items-center justify-between border-b border-white/60">
+                <div>
+                    <h2 class="font-bold text-gray-900 text-sm">个人中心</h2>
+                    <p class="text-[10px] text-gray-400">历史记录、收藏与偏好</p>
+                </div>
+                <button id="profile-overlay-close" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <i data-lucide="x" class="w-4 h-4 text-gray-600"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar">
+                <div class="px-4 pt-4 pb-24 space-y-4">
+                    <div class="bg-white rounded-3xl border border-gray-100 shadow-sm p-4">
+                        <div class="flex items-center gap-4">
+                            <div class="w-14 h-14 rounded-full p-[2px]" style="background:linear-gradient(135deg,#10B981,#06B6D4,#A855F7)">
+                                <div class="w-full h-full rounded-full bg-white flex items-center justify-center text-brand-green font-bold">ME</div>
+                            </div>
+                            <div class="min-w-0">
+                                <h3 id="profile-name" class="text-sm font-bold text-gray-800">旅行用户</h3>
+                                <p id="profile-subtitle" class="text-[10px] text-gray-400 mt-1">旅途进行中</p>
+                            </div>
+                        </div>
+                        <div id="profile-stats" class="grid grid-cols-3 gap-2 mt-4"></div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button class="profile-tab active flex-1 py-2 rounded-xl text-xs font-bold border border-gray-200 transition-all" data-profile-tab="history">历史记录</button>
+                        <button class="profile-tab flex-1 py-2 rounded-xl text-xs font-bold text-gray-500 border border-gray-200 bg-gray-50 transition-all" data-profile-tab="favorites">收藏推荐</button>
+                    </div>
+
+                    <div id="profile-tab-history" class="space-y-4">
+                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 history-session-card">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-xs font-bold text-gray-800">历史会话</p>
+                                    <p class="text-[10px] text-gray-400 mt-1">查看你之前保存的旅行对话与规划记录</p>
+                                </div>
+                                <button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-origami-gradient" data-host-action="open_history">打开历史</button>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 history-session-card">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <p class="text-xs font-bold text-gray-800">当前行程</p>
+                                    <p id="profile-current-trip" class="text-[10px] text-gray-400 mt-1">还没有生成完整行程</p>
+                                </div>
+                                <button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-origami-gradient" data-host-action="open_itinerary">查看行程</button>
+                            </div>
+                        </div>
+                        <button id="profile-pref-btn" class="w-full flex items-center justify-between p-4 rounded-2xl bg-white border border-gray-100 shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                            <span class="flex items-center gap-2"><i data-lucide="settings" class="w-4 h-4 text-gray-400"></i> 偏好设置</span>
+                            <i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i>
+                        </button>
+                    </div>
+
+                    <div id="profile-tab-favorites" class="hidden space-y-3"></div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- end app-container -->
+
+    <script>
+        // Active timer management
+        let activeTimers = [];
+        const clearAllTimers = () => { activeTimers.forEach(clearTimeout); activeTimers = []; };
+
+        // Packing list state
+        const packingState = {};
+
+        // Food filter state
+        let activeFoodChip = 'all';
+
+        // Hotel carousel state
+        let carouselIndex = 0;
+
+        // Spot data
+        const spotData = [
+            { name: '浅草寺', dist: '0.8km', rating: '4.9', icon: 'landmark' },
+            { name: '东京塔', dist: '2.1km', rating: '4.8', icon: 'tower' },
+            { name: '涩谷十字路口', dist: '3.4km', rating: '4.7', icon: 'traffic-cone' },
+            { name: '秋叶原电器街', dist: '4.2km', rating: '4.6', icon: 'cpu' },
+            { name: '上野公园', dist: '1.9km', rating: '4.8', icon: 'trees' },
+        ];
+
+        // ====================================================
+        // SINGLE CLICK DELEGATION — removed; handled by global script below
+        // ====================================================
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+
+            const chatContainer = document.getElementById('chat-container');
+            const chatInput = document.getElementById('chat-input');
+
+            // Scroll helper
+            const scrollToBottom = () => requestAnimationFrame(() => { chatContainer.scrollTop = chatContainer.scrollHeight; });
+
+            // Refresh icons after HTML injection
+            const updateIcons = () => lucide.createIcons();
+
+            // Build spots list inside fullscreen map
+            buildSpotsList();
+
+            // ================================================
+            // RENDER FUNCTIONS
+            // ================================================
+
+            const renderUserMessage = (text) =>
+                '<div class="flex justify-end w-full animate-slide-up"><div class="chat-bubble-user px-4 py-3 max-w-[85%] text-sm leading-relaxed">' + text + '</div></div>';
+
+            const renderAIText = (text) =>
+                '<div class="flex items-start gap-2 w-full animate-slide-up"><div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1"><div class="w-full h-full bg-white rounded-full overflow-hidden"><img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover"></div></div><div class="chat-bubble-ai px-4 py-3 max-w-[80%] text-sm text-gray-700 leading-relaxed">' + text + '</div></div>';
+
+            const renderTyping = () =>
+                '<div id="typing-indicator" class="flex items-start gap-2 w-full animate-fade-in"><div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1"><div class="w-full h-full bg-white rounded-full overflow-hidden"><img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover"></div></div><div class="chat-bubble-ai px-4 py-4 max-w-[80%] flex items-center gap-1"><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:0ms"></div><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:150ms"></div><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:300ms"></div></div></div>';
+
+            // Skeleton loading card
+            const renderSkeleton = () =>
+                '<div id="skeleton-card" class="w-full animate-fade-in pl-10 pr-2"><div class="bg-white border border-gray-100 p-4 rounded-2xl shadow-sm space-y-3"><div class="skeleton-block h-32 w-full"></div><div class="skeleton-block h-4 w-3/4"></div><div class="skeleton-block h-3 w-1/2"></div><div class="flex gap-2 mt-2"><div class="skeleton-block h-8 flex-1"></div><div class="skeleton-block h-8 w-20"></div></div></div></div>';
+
+            // Hotel cards
+            const renderHotelCards = () =>
+                '<div class="flex flex-col gap-3 w-full animate-slide-up pl-10 pr-2">' +
+                '<div class="hotel-card bg-card-gradient border border-white p-3 rounded-2xl shadow-glass relative overflow-hidden cursor-pointer hover:shadow-neon-green transition-shadow" data-hotel="1">' +
+                '<div class="absolute top-0 right-0 bg-brand-green text-white text-[10px] px-2 py-1 rounded-bl-xl font-medium">推荐</div>' +
+                '<img src="https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=400&auto=format&fit=crop" class="w-full h-32 object-cover rounded-xl mb-3 pointer-events-none">' +
+                '<div class="flex justify-between items-start"><div><h3 class="font-bold text-gray-800 text-sm">云端秘境生态酒店</h3><div class="flex items-center gap-1 text-[11px] text-gray-500 mt-1"><i data-lucide="map-pin" class="w-3 h-3"></i> 距市中心 2.1km</div></div><div class="text-right"><span class="text-brand-purple font-bold text-lg">¥899</span><span class="text-[10px] text-gray-400">/晚</span><div class="flex items-center text-yellow-500 text-[10px] justify-end mt-1"><i data-lucide="star" class="w-3 h-3 fill-current"></i> 4.9</div></div></div>' +
+                '</div>' +
+                '<div class="hotel-card bg-card-gradient border border-white p-3 rounded-2xl shadow-glass relative overflow-hidden cursor-pointer hover:shadow-neon-cyan transition-shadow" data-hotel="2">' +
+                '<img src="https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?q=80&w=400&auto=format&fit=crop" class="w-full h-32 object-cover rounded-xl mb-3 pointer-events-none">' +
+                '<div class="flex justify-between items-start"><div><h3 class="font-bold text-gray-800 text-sm">星空穹顶度假村</h3><div class="flex items-center gap-1 text-[11px] text-gray-500 mt-1"><i data-lucide="map-pin" class="w-3 h-3"></i> 景区内</div></div><div class="text-right"><span class="text-brand-cyan font-bold text-lg">¥1,250</span><span class="text-[10px] text-gray-400">/晚</span><div class="flex items-center text-yellow-500 text-[10px] justify-end mt-1"><i data-lucide="star" class="w-3 h-3 fill-current"></i> 4.8</div></div></div>' +
+                '</div></div>';
+
+            // Itinerary card
+            const renderItineraryCard = () =>
+                '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white border border-gray-100 p-4 rounded-2xl shadow-sm relative"><div class="absolute left-0 top-0 bottom-0 w-1 bg-origami-gradient rounded-l-2xl"></div><h3 class="font-bold text-gray-800 mb-4 flex items-center justify-between"><span>东京三日深度游</span><span class="text-[10px] bg-brand-light text-brand-green px-2 py-1 rounded-full">已生成</span></h3><div class="space-y-4"><div class="relative pl-4 border-l-2 border-dashed border-gray-200"><div class="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-brand-cyan shadow-neon-cyan"></div><h4 class="text-xs font-bold text-brand-cyan mb-1">Day 1: 传统与现代的碰撞</h4><div class="bg-gray-50 p-2 rounded-lg text-[11px] text-gray-600 space-y-1"><p>上午：浅草寺祈福 &amp; 仲见世商店街</p><p>下午：秋叶原二次元朝圣</p><p>晚上：东京塔夜景</p></div></div><div class="relative pl-4 border-l-2 border-dashed border-gray-200"><div class="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-brand-green shadow-neon-green"></div><h4 class="text-xs font-bold text-brand-green mb-1">Day 2: 潮流文化探索</h4><div class="bg-gray-50 p-2 rounded-lg text-[11px] text-gray-600 space-y-1"><p>上午：涩谷十字路口打卡</p><p>下午：原宿 &amp; 表参道购物</p></div></div></div><button id="itinerary-expand-btn" class="w-full mt-4 py-2 rounded-xl bg-brand-light text-brand-green text-xs font-semibold hover:bg-brand-green hover:text-white transition-colors">查看完整行程</button></div></div>';
+
+            // Map card
+            const renderMapCard = () =>
+                '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white p-2 rounded-2xl shadow-md border border-brand-green/20"><div class="relative w-full h-40 rounded-xl overflow-hidden cursor-pointer group" id="map-fullscreen-btn"><img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=600&auto=format&fit=crop" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"><div class="absolute inset-0 bg-black/10"></div><div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"><div class="w-8 h-8 bg-brand-green rounded-full flex items-center justify-center shadow-neon-green animate-bounce"><i data-lucide="map-pin" class="w-4 h-4 text-white"></i></div></div><div class="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-white text-[10px] flex items-center gap-1 pointer-events-none"><i data-lucide="maximize" class="w-3 h-3"></i> 全屏查看</div></div><div class="mt-2 px-1 flex justify-between items-center"><p class="text-xs font-bold text-gray-800">已为您标记 5 个核心景点</p><span class="map-nav-btn text-[10px] text-brand-cyan flex items-center gap-1 cursor-pointer hover:text-brand-green transition-colors"><i data-lucide="navigation" class="w-3 h-3"></i> 开始导航</span></div></div></div>';
+
+            // Profile card
+            const renderProfileCard = () =>
+                '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100"><div class="flex items-center gap-4 mb-4"><div class="w-12 h-12 rounded-full bg-origami-gradient p-[2px]"><img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop" class="w-full h-full rounded-full border-2 border-white object-cover"></div><div><h3 class="font-bold text-gray-800 text-sm">探索者 Alex</h3><p class="text-[10px] text-gray-400">LV.4 黄金旅行家 · 积分 2,450</p></div></div><div class="grid grid-cols-3 gap-2 mb-4"><div class="profile-stat-btn bg-gray-50 rounded-xl p-2 text-center cursor-pointer hover:bg-brand-light transition-colors active:scale-95" data-stat="trips"><p class="text-lg font-bold text-gray-800">12</p><p class="text-[10px] text-gray-500">历史行程</p></div><div class="profile-stat-btn bg-gray-50 rounded-xl p-2 text-center cursor-pointer hover:bg-brand-light transition-colors active:scale-95" data-stat="favorites"><p class="text-lg font-bold text-gray-800">34</p><p class="text-[10px] text-gray-500">收藏夹</p></div><div class="profile-stat-btn bg-gray-50 rounded-xl p-2 text-center cursor-pointer hover:bg-brand-light transition-colors active:scale-95" data-stat="coupons"><p class="text-lg font-bold text-gray-800">8</p><p class="text-[10px] text-gray-500">优惠券</p></div></div><div class="space-y-2"><button id="preference-btn" class="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors"><span class="flex items-center gap-2"><i data-lucide="settings" class="w-4 h-4 text-gray-400"></i> 偏好设置</span><i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i></button></div></div></div>';
+
+            // ===== FOOD CARDS =====
+            const renderFoodCards = () => {
+                return '<div class="w-full animate-slide-up pl-10 pr-2 space-y-3">' +
+                    // Filter chips
+                    '<div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">' +
+                    '<button class="food-chip active flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600 transition-all" data-filter="all">全部</button>' +
+                    '<button class="food-chip flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600 transition-all" data-filter="chinese">中餐</button>' +
+                    '<button class="food-chip flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600 transition-all" data-filter="japanese">日料</button>' +
+                    '<button class="food-chip flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600 transition-all" data-filter="cafe">咖啡</button>' +
+                    '<button class="food-chip flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600 transition-all" data-filter="hot">网红</button>' +
+                    '</div>' +
+                    // Horizontal snack cards
+                    '<div>' +
+                    '<p class="text-[11px] font-bold text-gray-500 mb-2 flex items-center gap-1"><i data-lucide="zap" class="w-3 h-3 text-yellow-500"></i> 今日推荐</p>' +
+                    '<div class="flex gap-3 overflow-x-auto no-scrollbar snap-scroll pb-1">' +
+                    '<div class="food-snack-card flex-shrink-0 w-28 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow snap-start" data-name="精致寿司套餐">' +
+                    '<img src="https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=200&auto=format&fit=crop" class="w-full h-16 object-cover">' +
+                    '<div class="p-2"><p class="text-[11px] font-bold text-gray-800 leading-tight">精致寿司套餐</p><p class="text-[9px] text-gray-400 mt-0.5">日料 · ¥180+</p><p class="text-[9px] text-brand-cyan mt-0.5">0.5km</p></div>' +
+                    '</div>' +
+                    '<div class="food-snack-card flex-shrink-0 w-28 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow snap-start" data-name="抹茶甜品屋">' +
+                    '<img src="https://images.unsplash.com/photo-1555396273-367ea4eb4db5?q=80&w=200&auto=format&fit=crop" class="w-full h-16 object-cover">' +
+                    '<div class="p-2"><p class="text-[11px] font-bold text-gray-800 leading-tight">抹茶甜品屋</p><p class="text-[9px] text-gray-400 mt-0.5">咖啡 · ¥60+</p><p class="text-[9px] text-brand-cyan mt-0.5">1.2km</p></div>' +
+                    '</div>' +
+                    '<div class="food-snack-card flex-shrink-0 w-28 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow snap-start" data-name="街头拉面名店">' +
+                    '<img src="https://images.unsplash.com/photo-1569050467447-ce54b3bbc37d?q=80&w=200&auto=format&fit=crop" class="w-full h-16 object-cover">' +
+                    '<div class="p-2"><p class="text-[11px] font-bold text-gray-800 leading-tight">街头拉面名店</p><p class="text-[9px] text-gray-400 mt-0.5">日料 · ¥80+</p><p class="text-[9px] text-brand-cyan mt-0.5">0.8km</p></div>' +
+                    '</div>' +
+                    '<div class="food-snack-card flex-shrink-0 w-28 bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-shadow snap-start" data-name="晴空塔网红咖啡">' +
+                    '<img src="https://images.unsplash.com/photo-1563245372-f21724e3856d?q=80&w=200&auto=format&fit=crop" class="w-full h-16 object-cover">' +
+                    '<div class="p-2"><p class="text-[11px] font-bold text-gray-800 leading-tight">晴空塔网红咖啡</p><p class="text-[9px] text-gray-400 mt-0.5">网红 · ¥90+</p><p class="text-[9px] text-brand-cyan mt-0.5">2.1km</p></div>' +
+                    '</div>' +
+                    '</div></div>' +
+                    // Vertical restaurant list
+                    '<div class="space-y-3">' +
+                    // Restaurant 1
+                    '<div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">' +
+                    '<div class="relative"><img src="https://images.unsplash.com/photo-1579871494447-9811cf80d66c?q=80&w=500&auto=format&fit=crop" class="w-full h-28 object-cover">' +
+                    '<div class="absolute top-2 left-2 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full">日料</div>' +
+                    '<div class="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-full px-2 py-0.5"><i data-lucide="star" class="w-3 h-3 text-yellow-500 fill-current"></i><span class="text-[10px] font-bold text-gray-700">4.9</span></div>' +
+                    '</div>' +
+                    '<div class="p-3"><div class="flex justify-between items-start mb-2"><div><h4 class="text-sm font-bold text-gray-800">银座割烹料理·極</h4><p class="text-[10px] text-gray-400 mt-0.5">人均 ¥480 · 距您 1.1km</p></div></div>' +
+                    '<div class="flex items-center justify-between"><div class="flex gap-1"><span class="text-[10px] bg-green-50 text-brand-green px-2 py-0.5 rounded-full font-medium">米其林推荐</span><span class="text-[10px] bg-gray-50 text-gray-500 px-2 py-0.5 rounded-full">需预约</span></div>' +
+                    '<button class="food-reserve-btn bg-brand-green text-white text-[10px] font-bold px-3 py-1.5 rounded-xl hover:bg-brand-cyan transition-colors" data-name="银座割烹料理·極">立即预约</button>' +
+                    '</div></div></div>' +
+                    // Restaurant 2
+                    '<div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">' +
+                    '<div class="relative"><img src="https://images.unsplash.com/photo-1445116572660-236099ec97a0?q=80&w=500&auto=format&fit=crop" class="w-full h-28 object-cover">' +
+                    '<div class="absolute top-2 left-2 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full">咖啡</div>' +
+                    '<div class="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-full px-2 py-0.5"><i data-lucide="star" class="w-3 h-3 text-yellow-500 fill-current"></i><span class="text-[10px] font-bold text-gray-700">4.7</span></div>' +
+                    '</div>' +
+                    '<div class="p-3"><div class="flex justify-between items-start mb-2"><div><h4 class="text-sm font-bold text-gray-800">森系隐秘咖啡室</h4><p class="text-[10px] text-gray-400 mt-0.5">人均 ¥95 · 距您 0.6km</p></div></div>' +
+                    '<div class="flex items-center justify-between"><div class="flex gap-1"><span class="text-[10px] bg-cyan-50 text-brand-cyan px-2 py-0.5 rounded-full font-medium">拍照圣地</span><span class="text-[10px] bg-gray-50 text-gray-500 px-2 py-0.5 rounded-full">营业中</span></div>' +
+                    '<button class="food-reserve-btn bg-brand-cyan text-white text-[10px] font-bold px-3 py-1.5 rounded-xl hover:bg-brand-green transition-colors" data-name="森系隐秘咖啡室">立即预约</button>' +
+                    '</div></div></div>' +
+                    // Restaurant 3
+                    '<div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">' +
+                    '<div class="relative"><img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=500&auto=format&fit=crop" class="w-full h-28 object-cover">' +
+                    '<div class="absolute top-2 left-2 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full">网红</div>' +
+                    '<div class="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-full px-2 py-0.5"><i data-lucide="star" class="w-3 h-3 text-yellow-500 fill-current"></i><span class="text-[10px] font-bold text-gray-700">4.8</span></div>' +
+                    '</div>' +
+                    '<div class="p-3"><div class="flex justify-between items-start mb-2"><div><h4 class="text-sm font-bold text-gray-800">东京彩虹烤肉吧</h4><p class="text-[10px] text-gray-400 mt-0.5">人均 ¥320 · 距您 1.8km</p></div></div>' +
+                    '<div class="flex items-center justify-between"><div class="flex gap-1"><span class="text-[10px] bg-purple-50 text-brand-purple px-2 py-0.5 rounded-full font-medium">爆款</span><span class="text-[10px] bg-gray-50 text-gray-500 px-2 py-0.5 rounded-full">今日余位3</span></div>' +
+                    '<button class="food-reserve-btn bg-brand-purple text-white text-[10px] font-bold px-3 py-1.5 rounded-xl hover:opacity-80 transition-opacity" data-name="东京彩虹烤肉吧">立即预约</button>' +
+                    '</div></div></div>' +
+                    '</div></div>';
+            };
+
+            // ===== ACTIVITY CARDS =====
+            const renderActivityCards = () =>
+                '<div class="w-full animate-slide-up pl-10 pr-2 space-y-3">' +
+                // Activity 1
+                '<div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">' +
+                '<div class="relative"><img src="https://images.unsplash.com/photo-1545579133-99bb5ad189be?q=80&w=500&auto=format&fit=crop" class="w-full h-36 object-cover">' +
+                '<div class="absolute top-3 left-3 bg-brand-green text-white text-[10px] font-bold px-2.5 py-1 rounded-full">今天</div>' +
+                '<div class="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full">¥280/人</div>' +
+                '</div>' +
+                '<div class="p-3">' +
+                '<h4 class="font-bold text-gray-800 text-sm mb-1">东京·正宗茶道体验</h4>' +
+                '<p class="text-[10px] text-gray-400 mb-3">下午 14:00 – 16:00 · 浅草传统茶室 · 限8人</p>' +
+                '<div class="mb-3"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>剩余名额</span><span class="font-semibold text-brand-green">3 席</span></div>' +
+                '<div class="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="activity-bar-fill h-full bg-gradient-to-r from-brand-green to-brand-cyan rounded-full" style="width:63%"></div></div>' +
+                '<p class="text-[10px] text-gray-400 mt-1">已售 63% · 5人已报名</p></div>' +
+                '<button class="activity-book-btn w-full py-2.5 rounded-xl text-white text-xs font-bold bg-origami-gradient hover:opacity-90 transition-opacity" data-name="东京·正宗茶道体验">立即预订</button>' +
+                '</div></div>' +
+                // Activity 2
+                '<div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">' +
+                '<div class="relative"><img src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=500&auto=format&fit=crop" class="w-full h-36 object-cover">' +
+                '<div class="absolute top-3 left-3 bg-brand-purple text-white text-[10px] font-bold px-2.5 py-1 rounded-full">明天</div>' +
+                '<div class="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full">¥560/人</div>' +
+                '</div>' +
+                '<div class="p-3">' +
+                '<h4 class="font-bold text-gray-800 text-sm mb-1">银河·沉浸式夜游光影展</h4>' +
+                '<p class="text-[10px] text-gray-400 mb-3">19:00 – 22:00 · 台场特别会场 · 限200人</p>' +
+                '<div class="mb-3"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>剩余名额</span><span class="font-semibold text-brand-purple">42 席</span></div>' +
+                '<div class="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="activity-bar-fill h-full bg-gradient-to-r from-brand-purple to-brand-cyan rounded-full" style="width:79%"></div></div>' +
+                '<p class="text-[10px] text-gray-400 mt-1">已售 79% · 热门活动</p></div>' +
+                '<button class="activity-book-btn w-full py-2.5 rounded-xl text-white text-xs font-bold bg-gradient-to-r from-brand-purple to-brand-cyan hover:opacity-90 transition-opacity" data-name="银河·沉浸式夜游光影展">立即预订</button>' +
+                '</div></div>' +
+                // Activity 3
+                '<div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">' +
+                '<div class="relative"><img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=500&auto=format&fit=crop" class="w-full h-36 object-cover">' +
+                '<div class="absolute top-3 left-3 bg-brand-cyan text-white text-[10px] font-bold px-2.5 py-1 rounded-full">周末</div>' +
+                '<div class="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full">¥90/人</div>' +
+                '</div>' +
+                '<div class="p-3">' +
+                '<h4 class="font-bold text-gray-800 text-sm mb-1">代代木公园·当地文化市集</h4>' +
+                '<p class="text-[10px] text-gray-400 mb-3">周六 10:00 – 17:00 · 代代木公园 · 免预约</p>' +
+                '<div class="mb-3"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>参与人数</span><span class="font-semibold text-brand-cyan">不限</span></div>' +
+                '<div class="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="activity-bar-fill h-full bg-gradient-to-r from-brand-cyan to-brand-green rounded-full" style="width:35%"></div></div>' +
+                '<p class="text-[10px] text-gray-400 mt-1">120人已感兴趣</p></div>' +
+                '<button class="activity-book-btn w-full py-2.5 rounded-xl text-white text-xs font-bold bg-gradient-to-r from-brand-cyan to-brand-green hover:opacity-90 transition-opacity" data-name="代代木公园·当地文化市集">立即预订</button>' +
+                '</div></div></div>';
+
+            // ===== WEATHER CARD =====
+            const renderWeatherCard = () =>
+                '<div class="w-full animate-slide-up pl-10 pr-2">' +
+                '<div class="rounded-2xl overflow-hidden shadow-sm" style="background:linear-gradient(135deg,#0F172A 0%,#1E3A5F 60%,#1a2a4a 100%)">' +
+                '<div class="p-4">' +
+                '<div class="flex justify-between items-start mb-4">' +
+                '<div><p class="text-white/60 text-[10px] font-medium mb-1 flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3"></i> 东京·新宿区</p>' +
+                '<div class="flex items-end gap-2"><span id="weather-main-temp" class="text-white font-bold cursor-pointer select-none hover:text-brand-green transition-colors" style="font-size:48px;line-height:1">22°</span><span class="text-white/60 text-sm mb-2">C</span></div>' +
+                '<p class="text-white/70 text-xs">晴朗 · 体感 20°C</p></div>' +
+                '<div class="text-right"><div class="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center mb-1"><i data-lucide="sun" class="w-8 h-8 text-yellow-400"></i></div><p class="text-white/50 text-[10px]">紫外线: 中等</p></div>' +
+                '</div>' +
+                '<div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">' +
+                '<div class="weather-day-card selected flex-shrink-0 bg-white/10 rounded-xl px-3 py-2 text-center min-w-[52px] cursor-pointer transition-all" data-day="今天" data-advice="今日晴朗适合户外打卡，建议携带防晒霜，早晚温差较大请备外套。"><p class="text-white/60 text-[10px] mb-1">今天</p><i data-lucide="sun" class="w-4 h-4 text-yellow-400 mx-auto mb-1"></i><p class="text-white text-[11px] font-bold">22°</p><p class="text-white/50 text-[10px]">14°</p></div>' +
+                '<div class="weather-day-card flex-shrink-0 bg-white/10 rounded-xl px-3 py-2 text-center min-w-[52px] cursor-pointer transition-all" data-day="周四" data-advice="周四多云转晴，适合游览室内景点如博物馆，下午可外出享受日光。"><p class="text-white/60 text-[10px] mb-1">周四</p><i data-lucide="cloud-sun" class="w-4 h-4 text-blue-300 mx-auto mb-1"></i><p class="text-white text-[11px] font-bold">19°</p><p class="text-white/50 text-[10px]">13°</p></div>' +
+                '<div class="weather-day-card flex-shrink-0 bg-white/10 rounded-xl px-3 py-2 text-center min-w-[52px] cursor-pointer transition-all" data-day="周五" data-advice="周五有小雨，请务必携带折叠伞，推荐安排室内美食或购物行程。"><p class="text-white/60 text-[10px] mb-1">周五</p><i data-lucide="cloud-drizzle" class="w-4 h-4 text-cyan-400 mx-auto mb-1"></i><p class="text-white text-[11px] font-bold">16°</p><p class="text-white/50 text-[10px]">11°</p></div>' +
+                '<div class="weather-day-card flex-shrink-0 bg-white/10 rounded-xl px-3 py-2 text-center min-w-[52px] cursor-pointer transition-all" data-day="周六" data-advice="周六阴天气温偏低，适合穿着轻薄羽绒或风衣，探索室内文化场所。"><p class="text-white/60 text-[10px] mb-1">周六</p><i data-lucide="cloud" class="w-4 h-4 text-gray-300 mx-auto mb-1"></i><p class="text-white text-[11px] font-bold">17°</p><p class="text-white/50 text-[10px]">10°</p></div>' +
+                '<div class="weather-day-card flex-shrink-0 bg-white/10 rounded-xl px-3 py-2 text-center min-w-[52px] cursor-pointer transition-all" data-day="周日" data-advice="周日晴朗回暖，最适合户外公园、市集与拍照打卡，是本周出行最佳日！"><p class="text-white/60 text-[10px] mb-1">周日</p><i data-lucide="sun" class="w-4 h-4 text-yellow-400 mx-auto mb-1"></i><p class="text-white text-[11px] font-bold">21°</p><p class="text-white/50 text-[10px]">13°</p></div>' +
+                '</div>' +
+                '</div>' +
+                '<div class="bg-brand-green/20 border-t border-white/10 px-4 py-3 flex items-center gap-2">' +
+                '<i data-lucide="lightbulb" class="w-4 h-4 text-brand-green flex-shrink-0"></i>' +
+                '<p id="weather-advice-text" class="text-[11px] text-white/80 leading-relaxed">今日晴朗适合户外打卡，建议携带防晒霜，早晚温差较大请备外套。</p>' +
+                '</div></div></div>';
+
+            // ===== BUDGET CARD =====
+            const renderBudgetCard = () => {
+                const radius = 42;
+                const circ = 2 * Math.PI * radius;
+                const pct = 0.64;
+                const offset = circ * (1 - pct);
+                return '<div class="w-full animate-slide-up pl-10 pr-2">' +
+                    '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">' +
+                    '<div class="p-4">' +
+                    '<h3 class="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><i data-lucide="wallet" class="w-4 h-4 text-brand-green"></i> 预算追踪</h3>' +
+                    // Ring + stats
+                    '<div class="flex items-center gap-4 mb-4">' +
+                    '<div class="relative w-24 h-24 flex-shrink-0">' +
+                    '<svg viewBox="0 0 100 100" class="w-24 h-24">' +
+                    '<circle cx="50" cy="50" r="' + radius + '" fill="none" stroke="#f1f5f9" stroke-width="10"></circle>' +
+                    '<circle cx="50" cy="50" r="' + radius + '" fill="none" stroke="url(#budgetGrad)" stroke-width="10" stroke-linecap="round" stroke-dasharray="' + circ.toFixed(1) + '" stroke-dashoffset="' + offset.toFixed(1) + '" class="progress-ring-circle"></circle>' +
+                    '<defs><linearGradient id="budgetGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#10B981"></stop><stop offset="100%" stop-color="#06B6D4"></stop></linearGradient></defs>' +
+                    '</svg>' +
+                    '<div class="absolute inset-0 flex flex-col items-center justify-center">' +
+                    '<span class="text-base font-bold text-gray-800">64%</span>' +
+                    '<span class="text-[9px] text-gray-400">已使用</span>' +
+                    '</div></div>' +
+                    '<div class="flex-1"><p class="text-xs text-gray-500 mb-1">总预算</p><p class="font-bold text-gray-800 text-lg">¥12,000</p><p class="text-[11px] text-brand-green font-semibold mt-1">已花费 ¥7,680</p><p class="text-[10px] text-gray-400">剩余 ¥4,320 · 还有 2 天</p></div>' +
+                    '</div>' +
+                    // Category bars
+                    '<div class="space-y-2.5 mb-4">' +
+                    '<div class="budget-category-item cursor-pointer hover:bg-gray-50 rounded-lg px-1 py-0.5 -mx-1 transition-colors" data-cat="accommodation"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-brand-purple inline-block"></span> 住宿</span><span>¥2,700 · 35%</span></div><div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-brand-purple rounded-full" style="width:35%"></div></div></div>' +
+                    '<div class="budget-category-item cursor-pointer hover:bg-gray-50 rounded-lg px-1 py-0.5 -mx-1 transition-colors" data-cat="food"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-brand-green inline-block"></span> 餐饮</span><span>¥2,310 · 30%</span></div><div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-brand-green rounded-full" style="width:30%"></div></div></div>' +
+                    '<div class="budget-category-item cursor-pointer hover:bg-gray-50 rounded-lg px-1 py-0.5 -mx-1 transition-colors" data-cat="transport"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-brand-cyan inline-block"></span> 交通</span><span>¥1,540 · 20%</span></div><div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-brand-cyan rounded-full" style="width:20%"></div></div></div>' +
+                    '<div class="budget-category-item cursor-pointer hover:bg-gray-50 rounded-lg px-1 py-0.5 -mx-1 transition-colors" data-cat="tickets"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-yellow-400 inline-block"></span> 门票</span><span>¥1,130 · 15%</span></div><div class="h-1.5 bg-gray-100 rounded-full"><div class="h-full bg-yellow-400 rounded-full" style="width:15%"></div></div></div>' +
+                    '</div>' +
+                    '<div class="flex gap-2">' +
+                    '<button id="budget-add-btn" class="flex-1 py-2.5 rounded-xl bg-brand-light text-brand-green text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-brand-green hover:text-white transition-all active:scale-95"><i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> 记一笔</button>' +
+                    '<button id="budget-export-btn" class="flex-1 py-2.5 rounded-xl bg-gray-50 text-gray-600 text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-gray-100 transition-all active:scale-95"><i data-lucide="download" class="w-3.5 h-3.5"></i> 导出报告</button>' +
+                    '</div></div></div></div>';
+            };
+
+            // ===== PACKING LIST CARD =====
+            const packingCategories = [
+                { id: 'docs', label: '必备证件', icon: 'file-text', color: 'text-brand-purple', items: [
+                    { id: 'p1', name: '护照' }, { id: 'p2', name: '签证' }, { id: 'p3', name: '行程单' }
+                ]},
+                { id: 'clothes', label: '衣物', icon: 'shirt', color: 'text-brand-green', items: [
+                    { id: 'c1', name: '换洗衣物 ×3' }, { id: 'c2', name: '防风外套' }, { id: 'c3', name: '舒适步行鞋' }
+                ]},
+                { id: 'electronics', label: '电子设备', icon: 'smartphone', color: 'text-brand-cyan', items: [
+                    { id: 'e1', name: '充电宝' }, { id: 'e2', name: '旅行转换插头' }, { id: 'e3', name: '耳机' }, { id: 'e4', name: '相机' }
+                ]},
+                { id: 'toiletry', label: '洗漱用品', icon: 'droplets', color: 'text-yellow-500', items: [
+                    { id: 't1', name: '防晒霜 SPF50+' }, { id: 't2', name: '洗漱套装' }, { id: 't3', name: '创可贴' }
+                ]},
+            ];
+            const allPackItems = packingCategories.flatMap(c => c.items);
+
+            const renderPackingCard = () => {
+                const total = allPackItems.length;
+                const checkedCount = Object.values(packingState).filter(Boolean).length;
+                const pct = total > 0 ? Math.round((checkedCount / total) * 100) : 0;
+
+                let html = '<div class="w-full animate-slide-up pl-10 pr-2">' +
+                    '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">' +
+                    '<div class="p-4">' +
+                    '<h3 class="font-bold text-gray-800 text-sm mb-3 flex items-center gap-2"><i data-lucide="package" class="w-4 h-4 text-brand-cyan"></i> Packing List</h3>' +
+                    // Progress bar
+                    '<div class="mb-4"><div class="flex justify-between text-[10px] text-gray-500 mb-1.5">' +
+                    '<span>已打包 ' + checkedCount + ' / ' + total + ' 项</span>' +
+                    '<span class="font-bold text-brand-green">' + pct + '%</span>' +
+                    '</div><div class="h-2 bg-gray-100 rounded-full overflow-hidden">' +
+                    '<div id="pack-progress-bar" class="h-full bg-origami-gradient rounded-full transition-all duration-500" style="width:' + pct + '%"></div>' +
+                    '</div></div>';
+
+                packingCategories.forEach(cat => {
+                    html += '<div class="mb-3"><div class="flex items-center gap-1.5 mb-2"><i data-lucide="' + cat.icon + '" class="w-3.5 h-3.5 ' + cat.color + '"></i><span class="text-[11px] font-bold text-gray-600">' + cat.label + '</span></div>';
+                    html += '<div class="space-y-1.5">';
+                    cat.items.forEach(item => {
+                        const checked = packingState[item.id] || false;
+                        html += '<div class="pack-item flex items-center gap-2 cursor-pointer group' + (checked ? ' checked' : '') + '" data-id="' + item.id + '">' +
+                            '<div class="w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ' + (checked ? 'bg-brand-green border-brand-green' : 'border-gray-300 group-hover:border-brand-green') + '">' +
+                            (checked ? '<i data-lucide="check" class="w-2.5 h-2.5 text-white"></i>' : '') +
+                            '</div>' +
+                            '<span class="pack-label text-xs text-gray-700 ' + (checked ? 'line-through text-gray-400' : '') + '">' + item.name + '</span>' +
+                            '</div>';
+                    });
+                    html += '</div></div>';
+                });
+
+                html += '</div></div></div>';
+                return html;
+            };
+
+            // ===== EMPTY STATE =====
+            const renderEmptyState = (tabName) =>
+                '<div class="w-full animate-slide-up pl-10 pr-2">' +
+                '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col items-center text-center">' +
+                '<div class="w-16 h-16 rounded-3xl bg-brand-light flex items-center justify-center mb-4">' +
+                '<i data-lucide="compass" class="w-8 h-8 text-brand-green"></i>' +
+                '</div>' +
+                '<h4 class="font-bold text-gray-800 text-sm mb-1">暂无' + tabName + '内容</h4>' +
+                '<p class="text-[11px] text-gray-400 leading-relaxed mb-4">还没有规划好的' + tabName + '信息，<br>让 AI 帮你一键生成吧！</p>' +
+                '<button class="ai-plan-btn px-5 py-2.5 rounded-xl bg-origami-gradient text-white text-xs font-bold hover:opacity-90 transition-opacity" data-tab="' + tabName + '">让 AI 帮我规划</button>' +
+                '</div></div>';
+
+            // ================================================
+            // SIMULATE AI RESPONSE
+            // ================================================
+            const simulateAIResponse = (userText, aiText, componentHtml, delay, useSkeleton) => {
+                if (userText) {
+                    chatContainer.insertAdjacentHTML('beforeend', renderUserMessage(userText));
+                    scrollToBottom();
+                }
+
+                if (useSkeleton && delay > 1200) {
+                    chatContainer.insertAdjacentHTML('beforeend', renderSkeleton());
+                } else {
+                    chatContainer.insertAdjacentHTML('beforeend', renderTyping());
+                }
+                scrollToBottom();
+
+                const timerId = setTimeout(() => {
+                    const indicator = document.getElementById('typing-indicator') || document.getElementById('skeleton-card');
+                    if (indicator) indicator.remove();
+
+                    chatContainer.insertAdjacentHTML('beforeend', renderAIText(aiText));
+                    if (componentHtml) chatContainer.insertAdjacentHTML('beforeend', componentHtml);
+
+                    updateIcons();
+                    scrollToBottom();
+                }, delay || 1000);
+
+                activeTimers.push(timerId);
+            };
+
+            // ================================================
+            // HANDLE SEND
+            // ================================================
+            const handleSend = () => {
+                const text = chatInput.value.trim();
+                if (!text) return;
+                chatInput.value = '';
+                clearAllTimers();
+
+                const ind = document.getElementById('typing-indicator') || document.getElementById('skeleton-card');
+                if (ind) ind.remove();
+
+                const t = text.toLowerCase();
+                if (t.includes('酒店') || t.includes('住')) {
+                    simulateAIResponse(text, '为您精选了附近高分住宿，点击卡片可查看详情并预订：', renderHotelCards(), 1500, true);
+                } else if (t.includes('行程') || t.includes('玩')) {
+                    simulateAIResponse(text, '专属三日行程规划已生成，点击"查看完整行程"可展开每日详情：', renderItineraryCard(), 1800, true);
+                } else if (t.includes('地图') || t.includes('在哪')) {
+                    simulateAIResponse(text, '已为您标记 5 个核心景点，点击地图可进入全屏模式：', renderMapCard(), 1200, false);
+                } else if (t.includes('天气')) {
+                    simulateAIResponse(text, '已获取目的地实时天气数据，以下是未来五日预报：', renderWeatherCard(), 1000, false);
+                } else if (t.includes('预算') || t.includes('花了') || t.includes('消费')) {
+                    simulateAIResponse(text, '这是您此次行程的预算追踪概览，可点击"记一笔"快速记账：', renderBudgetCard(), 1000, false);
+                } else if (t.includes('打包') || t.includes('行李') || t.includes('清单')) {
+                    simulateAIResponse(text, '根据您的目的地和行程，AI 已生成专属打包清单，勾选已装入的物品：', renderPackingCard(), 1200, true);
+                } else if (t.includes('餐') || t.includes('吃') || t.includes('食')) {
+                    simulateAIResponse(text, '为您甄选了附近几家必吃餐厅，各具特色！', renderFoodCards(), 1500, true);
+                } else if (t.includes('活动') || t.includes('体验') || t.includes('玩什么')) {
+                    simulateAIResponse(text, '精选了3项当地热门活动，名额有限，手慢则无！', renderActivityCards(), 1500, true);
+                } else {
+                    simulateAIResponse(text, '已记录您关于「' + text + '」的需求。需要我先安排<b>行程路线</b>还是查看<b>住宿推荐</b>？', null, 900, false);
+                }
+            };
+
+            // Send via enter key only (click handled by global delegation)
+            chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
+
+            // ================================================
+            // NAV TAB HANDLER
+            // ================================================
+            function handleNavClick(item) {
+                document.querySelectorAll('.nav-item').forEach(n => {
+                    n.classList.remove('active', 'text-brand-green');
+                    n.classList.add('text-gray-400');
+                    n.querySelector('.icon-wrapper').classList.remove('bg-brand-light', 'shadow-neon-green', 'border', 'border-brand-green/30');
+                });
+                item.classList.add('active', 'text-brand-green');
+                item.classList.remove('text-gray-400');
+                item.querySelector('.icon-wrapper').classList.add('bg-brand-light', 'shadow-neon-green', 'border', 'border-brand-green/30');
+
+                const tab = item.getAttribute('data-tab');
+                clearAllTimers();
+                const ind = document.getElementById('typing-indicator') || document.getElementById('skeleton-card');
+                if (ind) ind.remove();
+
+                switch (tab) {
+                    case 'home':
+                        simulateAIResponse(null, '回到主对话啦，有什么新的旅行灵感随时告诉我！', null, 500, false);
+                        break;
+                    case 'itinerary':
+                        simulateAIResponse('查看行程规划', '为您调出最新行程规划，点击"查看完整行程"可展开 Day 3 与导出选项：', renderItineraryCard(), 800, false);
+                        break;
+                    case 'hotel':
+                        simulateAIResponse('查看住宿推荐', '为您甄选了几家风格各异的优质酒店，点击卡片查看详情并预订：', renderHotelCards(), 1000, true);
+                        break;
+                    case 'food':
+                        simulateAIResponse('查看餐饮推荐', '精选三家必吃餐厅，支持筛选菜系，立即预约抢座位！', renderFoodCards(), 1400, true);
+                        break;
+                    case 'activity':
+                        simulateAIResponse('查看活动体验', '精选了3项当地热门活动，茶道、光影秀、市集全都有！', renderActivityCards(), 1400, true);
+                        break;
+                    case 'map':
+                        simulateAIResponse('打开地图', '地图已准备就绪，点击图片进入全屏模式，探索所有标记景点：', renderMapCard(), 900, false);
+                        break;
+                    case 'profile':
+                        simulateAIResponse('查看个人主页', '这是您的旅行资产与个人偏好概览：', renderProfileCard(), 600, false);
+                        break;
+                    default:
+                        simulateAIResponse('切换到' + tab, '正在加载相关内容...', null, 500, false);
+                }
+            }
+
+            // Avatar click
+            function handleAvatarClick() {
+                clearAllTimers();
+                simulateAIResponse(null, '✨ AI沉浸模式已开启！试试发送「天气」「预算」「行李」，我会为你推送专属功能卡片哦~', null, 400, false);
+            }
+
+            // ================================================
+            // MAP FULLSCREEN
+            // ================================================
+            function buildSpotsList() {
+                const list = document.getElementById('spots-list');
+                if (!list) return;
+                list.innerHTML = '';
+                spotData.forEach((s, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'map-pin-btn flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-white/10 transition-colors';
+                    div.dataset.spot = i;
+                    div.innerHTML =
+                        '<div class="w-7 h-7 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-brand-green"></i></div>' +
+                        '<div class="flex-1"><p class="text-white text-xs font-semibold">' + s.name + '</p><p class="text-white/40 text-[10px]">' + s.dist + ' · ★ ' + s.rating + '</p></div>' +
+                        '<i data-lucide="chevron-right" class="w-4 h-4 text-white/30"></i>';
+                    list.appendChild(div);
+                });
+            }
+
+            function openMapFullscreen() {
+                const overlay = document.getElementById('map-fullscreen');
+                overlay.style.display = 'flex';
+                overlay.style.opacity = '0';
+                requestAnimationFrame(() => { overlay.style.transition = 'opacity 0.3s'; overlay.style.opacity = '1'; });
+                updateIcons();
+            }
+
+            function closeMapFullscreen() {
+                const overlay = document.getElementById('map-fullscreen');
+                overlay.style.opacity = '0';
+                setTimeout(() => { overlay.style.display = 'none'; }, 300);
+                hideBubble();
+            }
+
+            function showSpotBubble(idx) {
+                const s = spotData[idx];
+                if (!s) return;
+                const bubble = document.getElementById('spot-bubble');
+                document.getElementById('spot-bubble-name').textContent = s.name;
+                document.getElementById('spot-bubble-rating').textContent = '评分 ' + s.rating + '  ·  ' + s.dist;
+                bubble.classList.remove('hidden');
+                updateIcons();
+            }
+
+            function hideBubble() {
+                const bubble = document.getElementById('spot-bubble');
+                if (bubble) bubble.classList.add('hidden');
+            }
+
+            // ================================================
+            // HOTEL BOTTOM SHEET
+            // ================================================
+            const hotelData = {
+                '1': { name: '云端秘境生态酒店', price: '¥899' },
+                '2': { name: '星空穹顶度假村', price: '¥1,250' },
+            };
+
+            function openHotelSheet(id) {
+                const info = hotelData[id] || hotelData['1'];
+                document.getElementById('sheet-hotel-name').textContent = info.name;
+                document.getElementById('sheet-hotel-price').textContent = info.price;
+
+                // Set carousel image based on hotel
+                if (id === '2') {
+                    const ci = document.getElementById('hotel-carousel-inner');
+                    ci.children[0].src = 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?q=80&w=600&auto=format&fit=crop';
+                } else {
+                    const ci = document.getElementById('hotel-carousel-inner');
+                    ci.children[0].src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=600&auto=format&fit=crop';
+                }
+                carouselIndex = 0;
+                updateCarousel();
+
+                const overlay = document.getElementById('hotel-sheet-overlay');
+                overlay.style.display = 'block';
+                overlay.style.opacity = '0';
+                requestAnimationFrame(() => { overlay.style.transition = 'opacity 0.3s'; overlay.style.opacity = '1'; });
+                const sheet = document.getElementById('hotel-sheet');
+                sheet.style.transform = 'translateY(100%)';
+                requestAnimationFrame(() => { sheet.style.transition = 'transform 0.4s cubic-bezier(0.16,1,0.3,1)'; sheet.style.transform = 'translateY(0)'; });
+                updateIcons();
+            }
+
+            function closeHotelSheet() {
+                const overlay = document.getElementById('hotel-sheet-overlay');
+                const sheet = document.getElementById('hotel-sheet');
+                sheet.style.transform = 'translateY(100%)';
+                overlay.style.opacity = '0';
+                setTimeout(() => { overlay.style.display = 'none'; }, 400);
+            }
+
+            function moveCarousel(dir) {
+                carouselIndex = (carouselIndex + dir + 3) % 3;
+                updateCarousel();
+            }
+
+            function updateCarousel() {
+                const inner = document.getElementById('hotel-carousel-inner');
+                if (inner) inner.style.transform = 'translateX(-' + (carouselIndex * 100) + '%)';
+                document.querySelectorAll('.carousel-dot').forEach((d, i) => {
+                    if (i === carouselIndex) {
+                        d.classList.add('opacity-100', 'w-4');
+                        d.classList.remove('opacity-50', 'w-1.5');
+                    } else {
+                        d.classList.remove('opacity-100', 'w-4');
+                        d.classList.add('opacity-50', 'w-1.5');
+                    }
+                });
+            }
+
+            // ================================================
+            // ITINERARY FULL OVERLAY
+            // ================================================
+            function openItineraryOverlay() {
+                const overlay = document.getElementById('itinerary-full-overlay');
+                overlay.style.display = 'flex';
+                overlay.style.opacity = '0';
+                requestAnimationFrame(() => { overlay.style.transition = 'opacity 0.25s'; overlay.style.opacity = '1'; });
+                updateIcons();
+            }
+
+            function closeItineraryOverlay() {
+                const overlay = document.getElementById('itinerary-full-overlay');
+                overlay.style.opacity = '0';
+                setTimeout(() => { overlay.style.display = 'none'; }, 250);
+            }
+
+            // ================================================
+            // FOOD CHIP FILTER
+            // ================================================
+            function switchFoodChip(filter) {
+                activeFoodChip = filter;
+                document.querySelectorAll('.food-chip').forEach(c => {
+                    if (c.dataset.filter === filter) {
+                        c.classList.add('active');
+                    } else {
+                        c.classList.remove('active');
+                    }
+                });
+            }
+
+            // ================================================
+            // PACKING ITEM TOGGLE
+            // ================================================
+            function togglePackItem(id) {
+                packingState[id] = !packingState[id];
+                // Re-render only the packing section in place
+                const oldCard = document.querySelector('.w-full.animate-slide-up .pack-item') ? document.querySelector('.w-full.animate-slide-up .pack-item').closest('.w-full.animate-slide-up') : null;
+                if (oldCard) {
+                    const newHtml = renderPackingCard();
+                    const temp = document.createElement('div');
+                    temp.innerHTML = newHtml;
+                    const newCard = temp.firstElementChild;
+                    newCard.style.animation = 'none'; // No re-entry animation
+                    oldCard.replaceWith(newCard);
+                    updateIcons();
+                }
+            }
+
+            // ================================================
+            // TOAST / FEEDBACK
+            // ================================================
+            function showToast(msg, color) {
+                const existing = document.getElementById('toast-msg');
+                if (existing) existing.remove();
+                const toast = document.createElement('div');
+                toast.id = 'toast-msg';
+                toast.className = 'absolute top-20 left-1/2 -translate-x-1/2 z-[100] text-white text-xs font-semibold px-4 py-2 rounded-full shadow-xl';
+                toast.style.background = color || 'linear-gradient(135deg,#10B981,#06B6D4)';
+                toast.style.whiteSpace = 'nowrap';
+                toast.textContent = msg;
+                toast.style.opacity = '0';
+                document.getElementById('app-container').appendChild(toast);
+                requestAnimationFrame(() => { toast.style.transition = 'opacity 0.3s'; toast.style.opacity = '1'; });
+                setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 2200);
+            }
+
+            function showActivityBookToast(name) {
+                showToast('🎉 已预订「' + name + '」，查看行程获取详情', 'linear-gradient(135deg,#10B981,#06B6D4)');
+            }
+
+            function showFoodReserveToast(name) {
+                showToast('✅ 「' + name + '」预约成功！', 'linear-gradient(135deg,#06B6D4,#A855F7)');
+            }
+
+            function showBudgetAddToast() {
+                showToast('💰 记账功能即将开放，敬请期待！', 'linear-gradient(135deg,#10B981,#A855F7)');
+            }
+
+            function handleAIPlanBtn(tabName) {
+                const tabMap = { '餐饮': 'food', '活动': 'activity' };
+                const tabKey = tabMap[tabName] || 'itinerary';
+                if (window._dispatchTabByKey) {
+                    window._dispatchTabByKey(tabKey);
+                    // Activate matching quick tab
+                    document.querySelectorAll('.quick-tab').forEach(t => t.classList.remove('active'));
+                    const matchTab = document.querySelector('.quick-tab[data-tab="' + tabKey + '"]');
+                    if (matchTab) matchTab.classList.add('active');
+                }
+            }
+
+            // ================================================
+            // INIT — welcome message
+            // ================================================
+            simulateAIResponse(null, '你好！我是你的专属 AI 旅行管家 <b>Oasis</b>。只需告诉我想去哪里，或点击底部功能栏，我将为你一站式规划完美旅程。✨<br><br>试试发送「天气」「预算」「行李清单」「活动」获取专属功能卡片！', null, 600, false);
+
+            // Expose functions to global scope for delegated calls
+            window.handleSend = handleSend;
+            window.handleAvatarClick = handleAvatarClick;
+            window.openMapFullscreen = openMapFullscreen;
+            window.closeMapFullscreen = closeMapFullscreen;
+            window.showSpotBubble = showSpotBubble;
+            window.openHotelSheet = openHotelSheet;
+            window.closeHotelSheet = closeHotelSheet;
+            window.moveCarousel = moveCarousel;
+            window.openItineraryOverlay = openItineraryOverlay;
+            window.closeItineraryOverlay = closeItineraryOverlay;
+            window.switchFoodChip = switchFoodChip;
+            window.togglePackItem = togglePackItem;
+        });
+    </script>
+
+    <script>
+        // ====================================================
+        // GLOBAL CLICK DELEGATION — single handler for all interactions
+        // Must run after DOMContentLoaded sets window.* functions
+        // ====================================================
+
+        // Preference chip state
+        const activePrefChips = new Set();
+
+        // Unified toast helper (works before DOMContentLoaded)
+        function showGlobalToast(msg, gradient) {
+            const existing = document.getElementById('toast-msg');
+            if (existing) existing.remove();
+            const toast = document.createElement('div');
+            toast.id = 'toast-msg';
+            toast.className = 'absolute top-20 left-1/2 -translate-x-1/2 z-[100] text-white text-xs font-semibold px-5 py-2.5 rounded-full shadow-xl';
+            toast.style.background = gradient || 'linear-gradient(135deg,#10B981,#06B6D4)';
+            toast.style.whiteSpace = 'nowrap';
+            toast.style.maxWidth = '320px';
+            toast.style.textOverflow = 'ellipsis';
+            toast.style.overflow = 'hidden';
+            toast.textContent = msg;
+            toast.style.opacity = '0';
+            const app = document.getElementById('app-container');
+            if (app) app.appendChild(toast);
+            requestAnimationFrame(() => { toast.style.transition = 'opacity 0.3s'; toast.style.opacity = '1'; });
+            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 2500);
+        }
+
+        // Open/close preference sheet
+        function openPreferenceSheet() {
+            const overlay = document.getElementById('preference-overlay');
+            if (!overlay) return;
+            overlay.style.display = 'block';
+            overlay.style.opacity = '0';
+            const sheet = document.getElementById('preference-sheet');
+            sheet.style.transform = 'translateY(100%)';
+            requestAnimationFrame(() => {
+                overlay.style.transition = 'opacity 0.3s';
+                overlay.style.opacity = '1';
+                sheet.style.transition = 'transform 0.4s cubic-bezier(0.16,1,0.3,1)';
+                sheet.style.transform = 'translateY(0)';
+            });
+            lucide.createIcons();
+        }
+
+        function closePreferenceSheet() {
+            const overlay = document.getElementById('preference-overlay');
+            if (!overlay) return;
+            const sheet = document.getElementById('preference-sheet');
+            sheet.style.transform = 'translateY(100%)';
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.style.display = 'none'; }, 400);
+        }
+
+        // Central id-based actions map
+        const clickActions = {
+            'map-fullscreen-close': () => window.closeMapFullscreen && window.closeMapFullscreen(),
+            'itinerary-overlay-close': () => window.closeItineraryOverlay && window.closeItineraryOverlay(),
+            'carousel-prev': () => window.moveCarousel && window.moveCarousel(-1),
+            'carousel-next': () => window.moveCarousel && window.moveCarousel(1),
+            'send-btn': () => window.handleSend && window.handleSend(),
+            'ai-avatar-btn': () => window.handleAvatarClick && window.handleAvatarClick(),
+            // Mic button: simulate voice input activation
+            'mic-btn': (e, el) => {
+                el.style.background = 'rgba(16,185,129,0.2)';
+                el.style.color = '#10B981';
+                const svgOrI = el.querySelector('svg') || el.querySelector('i');
+                if (svgOrI) svgOrI.style.color = '#10B981';
+                setTimeout(() => {
+                    el.style.background = '';
+                    el.style.color = '';
+                    if (svgOrI) svgOrI.style.color = '';
+                }, 1200);
+                showGlobalToast('🎙️ 语音输入已就绪，请说话…', 'linear-gradient(135deg,#10B981,#06B6D4)');
+            },
+            // Header map icon: trigger map tab
+            'header-map-btn': () => {
+                if (window._dispatchTabByKey) {
+                    window._dispatchTabByKey('map');
+                    // Activate map quick tab visual
+                    document.querySelectorAll('.quick-tab').forEach(t => t.classList.remove('active'));
+                    const mapTab = document.querySelector('.quick-tab[data-tab="map"]');
+                    if (mapTab) mapTab.classList.add('active');
+                }
+            },
+            // Weather main temperature: show clothing advice
+            'weather-main-temp': () => showGlobalToast('🌡️ 当前体感 20°C，适合轻薄外套 + 防晒', 'linear-gradient(135deg,#0F172A,#1E3A5F)'),
+            // Itinerary overlay export/share
+            'itinerary-export-btn': () => showGlobalToast('📄 行程 PDF 已生成，可在「我的文件」中查看', 'linear-gradient(135deg,#10B981,#06B6D4)'),
+            'itinerary-share-btn': () => showGlobalToast('🔗 分享链接已复制到剪贴板', 'linear-gradient(135deg,#06B6D4,#A855F7)'),
+            // Hotel sheet buttons — book with auto-close after 1.5s
+            'hotel-book-btn': () => {
+                showGlobalToast('🎉 预订申请已提交，等待确认', 'linear-gradient(135deg,#10B981,#06B6D4,#A855F7)');
+                setTimeout(() => { window.closeHotelSheet && window.closeHotelSheet(); }, 1500);
+            },
+            'hotel-favorite-btn': () => {
+                const btn = document.getElementById('hotel-favorite-btn');
+                const label = document.getElementById('hotel-fav-label');
+                if (!btn) return;
+                const isFav = btn.dataset.favorited === 'true';
+                if (isFav) {
+                    btn.dataset.favorited = 'false';
+                    btn.style.borderColor = '';
+                    btn.style.color = '';
+                    const iconEl = btn.querySelector('svg') || btn.querySelector('i');
+                    if (iconEl) {
+                        const i = document.createElement('i');
+                        i.setAttribute('data-lucide', 'heart');
+                        i.className = 'w-4 h-4 text-red-400';
+                        iconEl.replaceWith(i);
+                        lucide.createIcons();
+                    }
+                    if (label) label.textContent = '收藏';
+                } else {
+                    btn.dataset.favorited = 'true';
+                    btn.style.borderColor = '#ef4444';
+                    btn.style.color = '#ef4444';
+                    const iconEl = btn.querySelector('svg') || btn.querySelector('i');
+                    if (iconEl) {
+                        const i = document.createElement('i');
+                        i.setAttribute('data-lucide', 'heart');
+                        i.className = 'w-4 h-4 text-red-500 fill-current';
+                        iconEl.replaceWith(i);
+                        lucide.createIcons();
+                    }
+                    if (label) label.textContent = '已收藏';
+                    showGlobalToast('❤️ 已添加至收藏夹', 'linear-gradient(135deg,#ef4444,#f97316)');
+                }
+            },
+            // Budget buttons
+            'budget-add-btn': () => showGlobalToast('💰 记账功能即将开放，敬请期待！', 'linear-gradient(135deg,#10B981,#A855F7)'),
+            'budget-export-btn': () => showGlobalToast('📊 预算报告正在生成，稍后发送至邮箱', 'linear-gradient(135deg,#10B981,#A855F7)'),
+            // Itinerary expand button: open full itinerary overlay
+            'itinerary-expand-btn': () => window.openItineraryOverlay && window.openItineraryOverlay(),
+            // Profile preference button
+            'preference-btn': () => openPreferenceSheet(),
+            // Preference sheet buttons
+            'preference-sheet-close': () => closePreferenceSheet(),
+            'preference-save-btn': () => {
+                const selected = Array.from(activePrefChips);
+                closePreferenceSheet();
+                const count = selected.length;
+                const msg = count > 0 ? ('✅ 偏好已保存，已选择 ' + count + ' 种旅行风格') : '✅ 偏好设置已保存';
+                setTimeout(() => showGlobalToast(msg, 'linear-gradient(135deg,#10B981,#06B6D4)'), 450);
+            },
+        };
+
+        document.addEventListener('click', (e) => {
+            // ID-based actions (highest priority)
+            const el = e.target.closest('[id]');
+            if (el && clickActions[el.id]) {
+                clickActions[el.id](e, el);
+                return;
+            }
+
+            // Map fullscreen overlay background click to close
+            if (e.target.id === 'map-fullscreen') {
+                window.closeMapFullscreen && window.closeMapFullscreen();
+                return;
+            }
+
+            // Itinerary overlay background click to close
+            if (e.target.id === 'itinerary-full-overlay') {
+                window.closeItineraryOverlay && window.closeItineraryOverlay();
+                return;
+            }
+
+            // Nav tabs
+            const navItem = e.target.closest('.nav-item[data-tab]');
+            if (navItem) {
+                if (window._handleNavClick) window._handleNavClick(navItem);
+                return;
+            }
+
+            // Map pins (in fullscreen overlay and spots-list)
+            const pin = e.target.closest('.map-pin-btn');
+            if (pin && pin.dataset.spot !== undefined) {
+                window.showSpotBubble && window.showSpotBubble(parseInt(pin.dataset.spot));
+                // Highlight selected spot in spots-list
+                document.querySelectorAll('#spots-list .map-pin-btn').forEach(item => {
+                    item.classList.remove('bg-white/20', 'border-brand-green/50');
+                    item.classList.add('bg-white/5');
+                    item.style.borderColor = '';
+                });
+                // If the clicked pin is in the spots-list, highlight it
+                if (pin.closest('#spots-list')) {
+                    pin.classList.remove('bg-white/5');
+                    pin.classList.add('bg-white/20');
+                    pin.style.borderColor = 'rgba(16,185,129,0.5)';
+                } else {
+                    // Pin on map: find matching spot in list and highlight
+                    const spotIdx = parseInt(pin.dataset.spot);
+                    const listItems = document.querySelectorAll('#spots-list .map-pin-btn');
+                    listItems.forEach(item => {
+                        if (parseInt(item.dataset.spot) === spotIdx) {
+                            item.classList.remove('bg-white/5');
+                            item.classList.add('bg-white/20');
+                            item.style.borderColor = 'rgba(16,185,129,0.5)';
+                        }
+                    });
+                }
+                return;
+            }
+
+            // Hotel cards
+            const hotelCard = e.target.closest('.hotel-card');
+            if (hotelCard && hotelCard.dataset.hotel) {
+                // Reset favorite state on open
+                setTimeout(() => {
+                    const favBtn = document.getElementById('hotel-favorite-btn');
+                    const favLabel = document.getElementById('hotel-fav-label');
+                    if (favBtn) {
+                        favBtn.dataset.favorited = 'false';
+                        favBtn.style.borderColor = '';
+                        favBtn.style.color = '';
+                        const iconEl = favBtn.querySelector('svg') || favBtn.querySelector('i');
+                        if (iconEl) {
+                            const i = document.createElement('i');
+                            i.setAttribute('data-lucide', 'heart');
+                            i.className = 'w-4 h-4 text-red-400';
+                            iconEl.replaceWith(i);
+                            lucide.createIcons();
+                        }
+                        if (favLabel) favLabel.textContent = '收藏';
+                    }
+                }, 50);
+                window.openHotelSheet && window.openHotelSheet(hotelCard.dataset.hotel);
+                return;
+            }
+
+            // Hotel sheet overlay background tap to close
+            if (e.target.id === 'hotel-sheet-overlay') {
+                window.closeHotelSheet && window.closeHotelSheet();
+                return;
+            }
+
+            // Preference overlay background tap to close
+            if (e.target.id === 'preference-overlay') {
+                closePreferenceSheet();
+                return;
+            }
+
+            // Itinerary expand button
+            const itinBtn = e.target.closest('#itinerary-expand-btn');
+            if (itinBtn) { window.openItineraryOverlay && window.openItineraryOverlay(); return; }
+
+            // Map fullscreen button
+            const mapBtn = e.target.closest('#map-fullscreen-btn');
+            if (mapBtn) { window.openMapFullscreen && window.openMapFullscreen(); return; }
+
+            // Map navigation button
+            const mapNavBtn = e.target.closest('.map-nav-btn');
+            if (mapNavBtn) {
+                showGlobalToast('🧭 导航功能已启动，正在规划路线…', 'linear-gradient(135deg,#06B6D4,#10B981)');
+                return;
+            }
+
+            // Food filter chips
+            const chip = e.target.closest('.food-chip');
+            if (chip) { window.switchFoodChip && window.switchFoodChip(chip.dataset.filter); return; }
+
+            // Food snack cards (today's recommendations) — with favorited state toggle
+            const snackCard = e.target.closest('.food-snack-card');
+            if (snackCard) {
+                const name = snackCard.dataset.name || '该美食';
+                const isFav = snackCard.dataset.favorited === 'true';
+                // Visual pulse feedback
+                snackCard.style.transform = 'scale(0.95)';
+                setTimeout(() => { snackCard.style.transform = ''; }, 150);
+                if (isFav) {
+                    // Remove favorite
+                    snackCard.dataset.favorited = 'false';
+                    const badge = snackCard.querySelector('.snack-fav-badge');
+                    if (badge) badge.remove();
+                    showGlobalToast('💔 已从收藏夹移除「' + name + '」', 'linear-gradient(135deg,#6b7280,#374151)');
+                } else {
+                    // Add favorite
+                    snackCard.dataset.favorited = 'true';
+                    // Add heart badge if not already present
+                    if (!snackCard.querySelector('.snack-fav-badge')) {
+                        snackCard.style.position = 'relative';
+                        const badge = document.createElement('div');
+                        badge.className = 'snack-fav-badge absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center shadow-sm';
+                        badge.style.zIndex = '5';
+                        badge.innerHTML = '<span style="font-size:10px;line-height:1">❤️</span>';
+                        snackCard.appendChild(badge);
+                    }
+                    showGlobalToast('🍽️ 已添加「' + name + '」到收藏夹', 'linear-gradient(135deg,#10B981,#06B6D4)');
+                }
+                return;
+            }
+
+            // Packing item toggle
+            const packItem = e.target.closest('.pack-item');
+            if (packItem && packItem.dataset.id) { window.togglePackItem && window.togglePackItem(packItem.dataset.id); return; }
+
+            // Activity book btn
+            const actBtn = e.target.closest('.activity-book-btn');
+            if (actBtn) {
+                const name = actBtn.dataset.name || '该活动';
+                showGlobalToast('🎉 已预订「' + name + '」！', 'linear-gradient(135deg,#10B981,#06B6D4)');
+                return;
+            }
+
+            // Food reserve btn
+            const foodBtn = e.target.closest('.food-reserve-btn');
+            if (foodBtn) {
+                const name = foodBtn.dataset.name || '该餐厅';
+                showGlobalToast('✅ 「' + name + '」预约成功！', 'linear-gradient(135deg,#06B6D4,#A855F7)');
+                return;
+            }
+
+            // Profile stat buttons
+            const statBtn = e.target.closest('.profile-stat-btn');
+            if (statBtn) {
+                const stat = statBtn.dataset.stat;
+                const msgs = {
+                    trips: '🗺️ 您共有 12 段历史行程记录',
+                    favorites: '❤️ 已收藏 34 个景点与餐厅',
+                    coupons: '🎫 您有 8 张有效优惠券，本次旅行可使用 3 张',
+                };
+                showGlobalToast(msgs[stat] || '正在加载…', 'linear-gradient(135deg,#10B981,#A855F7)');
+                return;
+            }
+
+            // Preference chips (multi-select toggle)
+            const prefChip = e.target.closest('.pref-chip');
+            if (prefChip) {
+                const pref = prefChip.dataset.pref;
+                if (activePrefChips.has(pref)) {
+                    activePrefChips.delete(pref);
+                    prefChip.classList.remove('active');
+                } else {
+                    activePrefChips.add(pref);
+                    prefChip.classList.add('active');
+                }
+                return;
+            }
+
+            // Weather day cards
+            const weatherCard = e.target.closest('.weather-day-card');
+            if (weatherCard) {
+                document.querySelectorAll('.weather-day-card').forEach(c => c.classList.remove('selected'));
+                weatherCard.classList.add('selected');
+                const adviceEl = document.getElementById('weather-advice-text');
+                if (adviceEl && weatherCard.dataset.advice) {
+                    adviceEl.textContent = weatherCard.dataset.advice;
+                }
+                return;
+            }
+
+            // Day block click in itinerary overlay — show day summary toast
+            const dayBlock = e.target.closest('.day-block');
+            if (dayBlock) {
+                const day = dayBlock.dataset.day;
+                const dayMsgs = {
+                    '1': '📍 Day1 传统与现代 — 浅草寺 → 秋叶原 → 东京塔',
+                    '2': '📍 Day2 潮流文化 — 涩谷 → 原宿 → 新宿居酒屋',
+                    '3': '📍 Day3 自然宁静 — 上野公园 → 国立博物馆 → 汐留',
+                };
+                showGlobalToast(dayMsgs[day] || '📍 查看当日行程', 'linear-gradient(135deg,#06B6D4,#10B981)');
+                return;
+            }
+
+            // Budget category items
+            const budgetCat = e.target.closest('.budget-category-item');
+            if (budgetCat) {
+                const cat = budgetCat.dataset.cat;
+                const catMsgs = {
+                    accommodation: '🏨 住宿花费 ¥2,700，含 3 晚酒店',
+                    food: '🍜 餐饮花费 ¥2,310，含 11 顿正餐',
+                    transport: '🚆 交通花费 ¥1,540，含机票+地铁+出租',
+                    tickets: '🎫 门票花费 ¥1,130，含各大景区入场费',
+                };
+                showGlobalToast(catMsgs[cat] || '正在加载…', 'linear-gradient(135deg,#10B981,#A855F7)');
+                return;
+            }
+
+            // AI plan empty state btn — dispatch via _dispatchTabByKey
+            const aiPlanBtn = e.target.closest('.ai-plan-btn');
+            if (aiPlanBtn) {
+                const tabMap = { '餐饮': 'food', '活动': 'activity' };
+                const tabKey = tabMap[aiPlanBtn.dataset.tab] || 'itinerary';
+                if (window._dispatchTabByKey) {
+                    window._dispatchTabByKey(tabKey);
+                    // Activate matching quick tab
+                    document.querySelectorAll('.quick-tab').forEach(t => t.classList.remove('active'));
+                    const matchTab = document.querySelector('.quick-tab[data-tab="' + tabKey + '"]');
+                    if (matchTab) matchTab.classList.add('active');
+                }
+                return;
+            }
+
+            // Quick shortcut tabs
+            const quickTab = e.target.closest('.quick-tab[data-tab]');
+            if (quickTab) {
+                const tabKey = quickTab.getAttribute('data-tab');
+                // Update active styling
+                document.querySelectorAll('.quick-tab').forEach(t => t.classList.remove('active'));
+                quickTab.classList.add('active');
+                // Dispatch via global nav handler if available
+                if (window._handleNavClick) {
+                    const proxy = {
+                        getAttribute: (attr) => attr === 'data-tab' ? tabKey : null,
+                        classList: { add: () => {}, remove: () => {}, contains: () => false },
+                        querySelector: () => ({ classList: { add: () => {}, remove: () => {} } }),
+                    };
+                    window._handleNavClick(proxy);
+                } else if (window._dispatchTabByKey) {
+                    window._dispatchTabByKey(tabKey);
+                }
+                return;
+            }
+        });
+
+        // Re-wire nav after DOMContentLoaded sets handleNavClick
+        // (nav items removed; quick tabs now handled via global delegation)
+    </script>
+
+    <script>
+        // Re-expose handleNavClick globally after inner DOMContentLoaded completes
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+
+                function handleNavClickGlobal(item) {
+                    // item can be a real DOM element or a lightweight proxy object
+                    const tab = item.getAttribute('data-tab');
+                    activeTimers.forEach(clearTimeout);
+                    activeTimers = [];
+
+                    const ind = document.getElementById('typing-indicator') || document.getElementById('skeleton-card');
+                    if (ind) ind.remove();
+
+                    const chatContainer = document.getElementById('chat-container');
+                    const scrollToBottom = () => requestAnimationFrame(() => { chatContainer.scrollTop = chatContainer.scrollHeight; });
+
+                    const dispatchTab = (userText, aiText, compFn, delay, skel) => {
+                        if (userText) {
+                            chatContainer.insertAdjacentHTML('beforeend',
+                                '<div class="flex justify-end w-full animate-slide-up"><div class="chat-bubble-user px-4 py-3 max-w-[85%] text-sm leading-relaxed">' + userText + '</div></div>'
+                            );
+                            scrollToBottom();
+                        }
+                        const typingHtml = skel && delay > 1200
+                            ? '<div id="skeleton-card" class="w-full animate-fade-in pl-10 pr-2"><div class="bg-white border border-gray-100 p-4 rounded-2xl shadow-sm space-y-3"><div class="skeleton-block h-32 w-full"></div><div class="skeleton-block h-4 w-3/4"></div><div class="skeleton-block h-3 w-1/2"></div><div class="flex gap-2 mt-2"><div class="skeleton-block h-8 flex-1"></div><div class="skeleton-block h-8 w-20"></div></div></div></div>'
+                            : '<div id="typing-indicator" class="flex items-start gap-2 w-full animate-fade-in"><div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1"><div class="w-full h-full bg-white rounded-full overflow-hidden"><img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover"></div></div><div class="chat-bubble-ai px-4 py-4 max-w-[80%] flex items-center gap-1"><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:0ms"></div><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:150ms"></div><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:300ms"></div></div></div>';
+                        chatContainer.insertAdjacentHTML('beforeend', typingHtml);
+                        scrollToBottom();
+                        const tid = setTimeout(() => {
+                            const ind2 = document.getElementById('typing-indicator') || document.getElementById('skeleton-card');
+                            if (ind2) ind2.remove();
+                            chatContainer.insertAdjacentHTML('beforeend',
+                                '<div class="flex items-start gap-2 w-full animate-slide-up"><div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1"><div class="w-full h-full bg-white rounded-full overflow-hidden"><img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover"></div></div><div class="chat-bubble-ai px-4 py-3 max-w-[80%] text-sm text-gray-700 leading-relaxed">' + aiText + '</div></div>'
+                            );
+                            if (compFn) chatContainer.insertAdjacentHTML('beforeend', compFn());
+                            lucide.createIcons();
+                            scrollToBottom();
+                        }, delay);
+                        activeTimers.push(tid);
+                    };
+
+                    switch (tab) {
+                        case 'home':
+                            dispatchTab(null, '回到主对话啦，有什么新的旅行灵感随时告诉我！', null, 500, false);
+                            break;
+                        case 'itinerary':
+                            dispatchTab('查看行程规划', '为您调出最新行程，点击"查看完整行程"可展开 Day 3：',
+                                () => {
+                                    return '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white border border-gray-100 p-4 rounded-2xl shadow-sm relative"><div class="absolute left-0 top-0 bottom-0 w-1 bg-origami-gradient rounded-l-2xl"></div><h3 class="font-bold text-gray-800 mb-4 flex items-center justify-between"><span>东京三日深度游</span><span class="text-[10px] bg-brand-light text-brand-green px-2 py-1 rounded-full">已生成</span></h3><div class="space-y-4"><div class="relative pl-4 border-l-2 border-dashed border-gray-200"><div class="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-brand-cyan shadow-neon-cyan"></div><h4 class="text-xs font-bold text-brand-cyan mb-1">Day 1: 传统与现代的碰撞</h4><div class="bg-gray-50 p-2 rounded-lg text-[11px] text-gray-600 space-y-1"><p>上午：浅草寺祈福 &amp; 仲见世商店街</p><p>下午：秋叶原二次元朝圣</p><p>晚上：东京塔夜景</p></div></div><div class="relative pl-4 border-l-2 border-dashed border-gray-200"><div class="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-brand-green shadow-neon-green"></div><h4 class="text-xs font-bold text-brand-green mb-1">Day 2: 潮流文化探索</h4><div class="bg-gray-50 p-2 rounded-lg text-[11px] text-gray-600 space-y-1"><p>上午：涩谷十字路口打卡</p><p>下午：原宿 &amp; 表参道购物</p></div></div></div><button id="itinerary-expand-btn" class="w-full mt-4 py-2 rounded-xl bg-brand-light text-brand-green text-xs font-semibold hover:bg-brand-green hover:text-white transition-colors">查看完整行程</button></div></div>';
+                                }, 800, false);
+                            break;
+                        case 'hotel':
+                            dispatchTab('查看住宿推荐', '为您甄选了几家风格各异的优质酒店，点击卡片查看详情并预订：',
+                                () => '<div class="flex flex-col gap-3 w-full animate-slide-up pl-10 pr-2"><div class="hotel-card bg-card-gradient border border-white p-3 rounded-2xl shadow-glass relative overflow-hidden cursor-pointer hover:shadow-neon-green transition-shadow" data-hotel="1"><div class="absolute top-0 right-0 bg-brand-green text-white text-[10px] px-2 py-1 rounded-bl-xl font-medium">推荐</div><img src="https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=400&auto=format&fit=crop" class="w-full h-32 object-cover rounded-xl mb-3 pointer-events-none"><div class="flex justify-between items-start"><div><h3 class="font-bold text-gray-800 text-sm">云端秘境生态酒店</h3><div class="flex items-center gap-1 text-[11px] text-gray-500 mt-1"><i data-lucide="map-pin" class="w-3 h-3"></i> 距市中心 2.1km</div></div><div class="text-right"><span class="text-brand-purple font-bold text-lg">¥899</span><span class="text-[10px] text-gray-400">/晚</span><div class="flex items-center text-yellow-500 text-[10px] justify-end mt-1"><i data-lucide="star" class="w-3 h-3 fill-current"></i> 4.9</div></div></div></div><div class="hotel-card bg-card-gradient border border-white p-3 rounded-2xl shadow-glass relative overflow-hidden cursor-pointer hover:shadow-neon-cyan transition-shadow" data-hotel="2"><img src="https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?q=80&w=400&auto=format&fit=crop" class="w-full h-32 object-cover rounded-xl mb-3 pointer-events-none"><div class="flex justify-between items-start"><div><h3 class="font-bold text-gray-800 text-sm">星空穹顶度假村</h3><div class="flex items-center gap-1 text-[11px] text-gray-500 mt-1"><i data-lucide="map-pin" class="w-3 h-3"></i> 景区内</div></div><div class="text-right"><span class="text-brand-cyan font-bold text-lg">¥1,250</span><span class="text-[10px] text-gray-400">/晚</span><div class="flex items-center text-yellow-500 text-[10px] justify-end mt-1"><i data-lucide="star" class="w-3 h-3 fill-current"></i> 4.8</div></div></div></div></div>',
+                                1000, true);
+                            break;
+                        case 'food':
+                            dispatchTab('查看餐饮推荐', '精选三家必吃餐厅，支持筛选菜系，立即预约抢座位！',
+                                () => {
+                                    return '<div class="w-full animate-slide-up pl-10 pr-2 space-y-3"><div class="flex gap-2 overflow-x-auto no-scrollbar pb-1"><button class="food-chip active flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600" data-filter="all">全部</button><button class="food-chip flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600" data-filter="chinese">中餐</button><button class="food-chip flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600" data-filter="japanese">日料</button><button class="food-chip flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600" data-filter="cafe">咖啡</button><button class="food-chip flex-shrink-0 text-[11px] font-semibold px-3 py-1.5 rounded-full border border-gray-200 bg-white text-gray-600" data-filter="hot">网红</button></div><div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm"><div class="relative"><img src="https://images.unsplash.com/photo-1579871494447-9811cf80d66c?q=80&w=500&auto=format&fit=crop" class="w-full h-28 object-cover"><div class="absolute top-2 left-2 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full">日料</div><div class="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-full px-2 py-0.5"><i data-lucide="star" class="w-3 h-3 text-yellow-500 fill-current"></i><span class="text-[10px] font-bold text-gray-700">4.9</span></div></div><div class="p-3"><div class="flex justify-between items-center"><div><h4 class="text-sm font-bold text-gray-800">银座割烹料理·極</h4><p class="text-[10px] text-gray-400 mt-0.5">人均 ¥480 · 1.1km</p></div><button class="food-reserve-btn bg-brand-green text-white text-[10px] font-bold px-3 py-1.5 rounded-xl" data-name="银座割烹料理·極">立即预约</button></div></div></div><div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm"><div class="relative"><img src="https://images.unsplash.com/photo-1445116572660-236099ec97a0?q=80&w=500&auto=format&fit=crop" class="w-full h-28 object-cover"><div class="absolute top-2 left-2 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full">咖啡</div><div class="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-full px-2 py-0.5"><i data-lucide="star" class="w-3 h-3 text-yellow-500 fill-current"></i><span class="text-[10px] font-bold text-gray-700">4.7</span></div></div><div class="p-3"><div class="flex justify-between items-center"><div><h4 class="text-sm font-bold text-gray-800">森系隐秘咖啡室</h4><p class="text-[10px] text-gray-400 mt-0.5">人均 ¥95 · 0.6km</p></div><button class="food-reserve-btn bg-brand-cyan text-white text-[10px] font-bold px-3 py-1.5 rounded-xl" data-name="森系隐秘咖啡室">立即预约</button></div></div></div><div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm"><div class="relative"><img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=500&auto=format&fit=crop" class="w-full h-28 object-cover"><div class="absolute top-2 left-2 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full">网红</div><div class="absolute top-2 right-2 flex items-center gap-1 bg-white/90 rounded-full px-2 py-0.5"><i data-lucide="star" class="w-3 h-3 text-yellow-500 fill-current"></i><span class="text-[10px] font-bold text-gray-700">4.8</span></div></div><div class="p-3"><div class="flex justify-between items-center"><div><h4 class="text-sm font-bold text-gray-800">东京彩虹烤肉吧</h4><p class="text-[10px] text-gray-400 mt-0.5">人均 ¥320 · 1.8km</p></div><button class="food-reserve-btn bg-brand-purple text-white text-[10px] font-bold px-3 py-1.5 rounded-xl" data-name="东京彩虹烤肉吧">立即预约</button></div></div></div></div>';
+                                }, 1400, true);
+                            break;
+                        case 'activity':
+                            dispatchTab('查看活动体验', '精选了3项当地热门活动，茶道、光影秀、市集全都有！',
+                                () => '<div class="w-full animate-slide-up pl-10 pr-2 space-y-3"><div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm"><div class="relative"><img src="https://images.unsplash.com/photo-1545579133-99bb5ad189be?q=80&w=500&auto=format&fit=crop" class="w-full h-36 object-cover"><div class="absolute top-3 left-3 bg-brand-green text-white text-[10px] font-bold px-2.5 py-1 rounded-full">今天</div><div class="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full">¥280/人</div></div><div class="p-3"><h4 class="font-bold text-gray-800 text-sm mb-1">东京·正宗茶道体验</h4><p class="text-[10px] text-gray-400 mb-3">下午 14:00–16:00 · 浅草传统茶室 · 限8人</p><div class="mb-3"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>剩余名额</span><span class="font-semibold text-brand-green">3 席</span></div><div class="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-brand-green to-brand-cyan rounded-full" style="width:63%"></div></div><p class="text-[10px] text-gray-400 mt-1">已售 63%</p></div><button class="activity-book-btn w-full py-2.5 rounded-xl text-white text-xs font-bold bg-origami-gradient" data-name="东京·正宗茶道体验">立即预订</button></div></div><div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm"><div class="relative"><img src="https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=500&auto=format&fit=crop" class="w-full h-36 object-cover"><div class="absolute top-3 left-3 bg-brand-purple text-white text-[10px] font-bold px-2.5 py-1 rounded-full">明天</div><div class="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full">¥560/人</div></div><div class="p-3"><h4 class="font-bold text-gray-800 text-sm mb-1">银河·沉浸式夜游光影展</h4><p class="text-[10px] text-gray-400 mb-3">19:00–22:00 · 台场特别会场</p><div class="mb-3"><div class="flex justify-between text-[10px] text-gray-500 mb-1"><span>剩余名额</span><span class="font-semibold text-brand-purple">42 席</span></div><div class="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-brand-purple to-brand-cyan rounded-full" style="width:79%"></div></div><p class="text-[10px] text-gray-400 mt-1">已售 79% · 热门</p></div><button class="activity-book-btn w-full py-2.5 rounded-xl text-white text-xs font-bold bg-gradient-to-r from-brand-purple to-brand-cyan" data-name="银河·沉浸式夜游光影展">立即预订</button></div></div><div class="bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm"><div class="relative"><img src="https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=500&auto=format&fit=crop" class="w-full h-36 object-cover"><div class="absolute top-3 left-3 bg-brand-cyan text-white text-[10px] font-bold px-2.5 py-1 rounded-full">周末</div><div class="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full">¥90/人</div></div><div class="p-3"><h4 class="font-bold text-gray-800 text-sm mb-1">代代木公园·当地文化市集</h4><p class="text-[10px] text-gray-400 mb-3">周六 10:00–17:00 · 代代木公园</p><div class="mb-3"><div class="h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-brand-cyan to-brand-green rounded-full" style="width:35%"></div></div><p class="text-[10px] text-gray-400 mt-1">120人已感兴趣</p></div><button class="activity-book-btn w-full py-2.5 rounded-xl text-white text-xs font-bold bg-gradient-to-r from-brand-cyan to-brand-green" data-name="代代木公园·当地文化市集">立即预订</button></div></div></div>',
+                                1400, true);
+                            break;
+                        case 'map':
+                            dispatchTab('打开地图', '地图已准备就绪，点击图片进入全屏模式：',
+                                () => '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white p-2 rounded-2xl shadow-md border border-brand-green/20"><div class="relative w-full h-40 rounded-xl overflow-hidden cursor-pointer group" id="map-fullscreen-btn"><img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=600&auto=format&fit=crop" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"><div class="absolute inset-0 bg-black/10"></div><div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"><div class="w-8 h-8 bg-brand-green rounded-full flex items-center justify-center shadow-neon-green animate-bounce"><i data-lucide="map-pin" class="w-4 h-4 text-white"></i></div></div><div class="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-white text-[10px] flex items-center gap-1 pointer-events-none"><i data-lucide="maximize" class="w-3 h-3"></i> 全屏查看</div></div><div class="mt-2 px-1 flex justify-between items-center"><p class="text-xs font-bold text-gray-800">已为您标记 5 个核心景点</p><span class="map-nav-btn text-[10px] text-brand-cyan flex items-center gap-1 cursor-pointer hover:text-brand-green transition-colors"><i data-lucide="navigation" class="w-3 h-3"></i> 开始导航</span></div></div></div>',
+                                900, false);
+                            break;
+                        case 'profile':
+                            dispatchTab('查看个人主页', '这是您的旅行资产与个人偏好概览：',
+                                () => '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100"><div class="flex items-center gap-4 mb-4"><div class="w-12 h-12 rounded-full bg-origami-gradient p-[2px]"><img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop" class="w-full h-full rounded-full border-2 border-white object-cover"></div><div><h3 class="font-bold text-gray-800 text-sm">探索者 Alex</h3><p class="text-[10px] text-gray-400">LV.4 黄金旅行家 · 积分 2,450</p></div></div><div class="grid grid-cols-3 gap-2 mb-4"><div class="profile-stat-btn bg-gray-50 rounded-xl p-2 text-center cursor-pointer hover:bg-brand-light transition-colors active:scale-95" data-stat="trips"><p class="text-lg font-bold text-gray-800">12</p><p class="text-[10px] text-gray-500">历史行程</p></div><div class="profile-stat-btn bg-gray-50 rounded-xl p-2 text-center cursor-pointer hover:bg-brand-light transition-colors active:scale-95" data-stat="favorites"><p class="text-lg font-bold text-gray-800">34</p><p class="text-[10px] text-gray-500">收藏夹</p></div><div class="profile-stat-btn bg-gray-50 rounded-xl p-2 text-center cursor-pointer hover:bg-brand-light transition-colors active:scale-95" data-stat="coupons"><p class="text-lg font-bold text-gray-800">8</p><p class="text-[10px] text-gray-500">优惠券</p></div></div><div class="space-y-2"><button id="preference-btn" class="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors"><span class="flex items-center gap-2"><i data-lucide="settings" class="w-4 h-4 text-gray-400"></i> 偏好设置</span><i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i></button></div></div></div>',
+                                600, false);
+                            break;
+                    }
+                }
+
+                window._handleNavClick = handleNavClickGlobal;
+                // Also expose a key-based dispatch for quick tabs
+                window._dispatchTabByKey = (tabKey) => {
+                    const proxy = {
+                        getAttribute: (attr) => attr === 'data-tab' ? tabKey : null,
+                        classList: { add: () => {}, remove: () => {}, contains: () => false },
+                        querySelector: () => ({ classList: { add: () => {}, remove: () => {} } }),
+                    };
+                    handleNavClickGlobal(proxy);
+                };
+            }, 200);
+        });
+    </script>
+
+    <script>
+        (function () {
+            const CHANNEL = "zhitu-shell";
+            let hostState = null;
+            let currentTab = "home";
+            let lastChatMarkup = "";
+
+            function isEmbeddedHost() {
+                return window.__ZHITU_EMBEDDED__ === true || !!window.RikkaZhituBridge || window.parent !== window;
+            }
+
+            function emitHostAction(action, payload) {
+                if (!isEmbeddedHost()) return false;
+                const envelope = {
+                    channel: CHANNEL,
+                    type: "action",
+                    action,
+                    payload: payload || {},
+                };
+
+                if (window.RikkaZhituBridge && typeof window.RikkaZhituBridge.postMessage === "function") {
+                    window.RikkaZhituBridge.postMessage(JSON.stringify(envelope));
+                }
+
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage(envelope, "*");
+                }
+
+                window.dispatchEvent(new CustomEvent("zhitu-shell-action", { detail: envelope }));
+                return true;
+            }
+
+            function escapeHtml(value) {
+                return String(value || "")
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+
+            function renderMarkdownInline(text) {
+                return String(text || "")
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
+                    .replace(/`([^`]+)`/g, '<code>$1</code>')
+                    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+                    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+                    .replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>');
+            }
+
+            function renderMarkdown(text) {
+                const lines = escapeHtml(String(text || "")).replace(/\r\n/g, "\n").split("\n");
+                const html = [];
+                let inUl = false;
+                let inOl = false;
+
+                function closeLists() {
+                    if (inUl) {
+                        html.push('</ul>');
+                        inUl = false;
+                    }
+                    if (inOl) {
+                        html.push('</ol>');
+                        inOl = false;
+                    }
+                }
+
+                lines.forEach((line) => {
+                    const trimmed = line.trim();
+
+                    if (!trimmed) {
+                        closeLists();
+                        return;
+                    }
+
+                    let match = trimmed.match(/^(#{1,3})\s+(.+)$/);
+                    if (match) {
+                        closeLists();
+                        const level = Math.min(match[1].length, 3);
+                        html.push('<h' + level + '>' + renderMarkdownInline(match[2]) + '</h' + level + '>');
+                        return;
+                    }
+
+                    match = trimmed.match(/^>\s+(.+)$/);
+                    if (match) {
+                        closeLists();
+                        html.push('<blockquote><p>' + renderMarkdownInline(match[1]) + '</p></blockquote>');
+                        return;
+                    }
+
+                    match = trimmed.match(/^[-*+]\s+(.+)$/);
+                    if (match) {
+                        if (inOl) {
+                            html.push('</ol>');
+                            inOl = false;
+                        }
+                        if (!inUl) {
+                            html.push('<ul>');
+                            inUl = true;
+                        }
+                        html.push('<li>' + renderMarkdownInline(match[1]) + '</li>');
+                        return;
+                    }
+
+                    match = trimmed.match(/^\d+[.)]\s+(.+)$/);
+                    if (match) {
+                        if (inUl) {
+                            html.push('</ul>');
+                            inUl = false;
+                        }
+                        if (!inOl) {
+                            html.push('<ol>');
+                            inOl = true;
+                        }
+                        html.push('<li>' + renderMarkdownInline(match[1]) + '</li>');
+                        return;
+                    }
+
+                    closeLists();
+                    html.push('<p>' + renderMarkdownInline(trimmed) + '</p>');
+                });
+
+                closeLists();
+                return html.join("");
+            }
+
+            function ensureEmbeddedLayout() {
+                if (!isEmbeddedHost()) return;
+
+                document.body.style.background = "#0F172A";
+                document.body.style.padding = "0";
+                document.body.style.margin = "0";
+
+                const app = document.getElementById("app-container");
+                if (!app) return;
+                app.style.width = "100vw";
+                app.style.height = "100vh";
+                app.style.borderRadius = "0";
+                app.style.border = "0";
+                app.style.boxShadow = "none";
+                app.style.maxWidth = "none";
+                app.style.maxHeight = "none";
+            }
+
+            function getConversation() {
+                return (hostState && hostState.conversation) || { title: "", isGenerating: false, messages: [], suggestions: [] };
+            }
+
+            function getTravelPlan() {
+                return (hostState && hostState.travelPlan) || null;
+            }
+
+            function getTravelUiState() {
+                return (hostState && hostState.travelUiState) || null;
+            }
+
+            function getUser() {
+                return (hostState && hostState.user) || { name: "OASIS AI", subtitle: "", stats: [] };
+            }
+
+            function updateQuickTabs() {
+                document.querySelectorAll(".quick-tab").forEach((tab) => {
+                    tab.classList.toggle("active", tab.getAttribute("data-tab") === currentTab);
+                });
+            }
+
+            function renderHeader() {
+                ensureEmbeddedLayout();
+                const user = getUser();
+                const conversation = getConversation();
+                const titleEl = document.querySelector("header h1");
+                const subtitleEl = document.querySelector("header p");
+
+                if (titleEl) {
+                    titleEl.textContent = conversation.title || user.name || "OASIS AI";
+                }
+
+                if (subtitleEl) {
+                    subtitleEl.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse"></span> ' +
+                        escapeHtml(user.subtitle || "Connected");
+                }
+            }
+
+            function buildMessageHtml(message) {
+                const rawText = message && message.text ? message.text : "";
+                const text = escapeHtml(rawText);
+                const role = String((message && message.role) || "").toUpperCase();
+                if (role === "USER") {
+                    return '<div class="flex justify-end w-full animate-slide-up"><div class="chat-bubble-user px-4 py-3 max-w-[85%] text-sm leading-relaxed whitespace-pre-wrap">' + text + '</div></div>';
+                }
+
+                return '<div class="flex items-start gap-2 w-full animate-slide-up"><div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1"><div class="w-full h-full bg-white rounded-full flex items-center justify-center text-brand-green font-bold text-xs">AI</div></div><div class="chat-bubble-ai px-4 py-3 max-w-[80%] text-sm text-gray-700 leading-relaxed"><div class="zhitu-markdown">' + renderMarkdown(rawText) + '</div></div></div>';
+            }
+
+            function buildEmptyCard(title, body, actionLabel, actionName, actionPayload) {
+                return '<div class="w-full animate-slide-up pl-10 pr-2">' +
+                    '<div class="bg-white border border-gray-100 p-4 rounded-2xl shadow-sm">' +
+                    '<h3 class="font-bold text-gray-800 text-sm mb-2">' + escapeHtml(title) + '</h3>' +
+                    '<p class="text-xs text-gray-500 leading-6">' + escapeHtml(body) + '</p>' +
+                    (actionLabel
+                        ? '<button class="ai-plan-btn mt-4 px-4 py-2 rounded-xl bg-origami-gradient text-white text-xs font-bold" data-host-action="' + escapeHtml(actionName) + '" data-host-payload="' + escapeHtml(JSON.stringify(actionPayload || {})) + '">' + escapeHtml(actionLabel) + '</button>'
+                        : "") +
+                    '</div></div>';
+            }
+
+            function buildWeatherCard() {
+                const ui = getTravelUiState();
+                const plan = getTravelPlan();
+                const firstDay = plan && Array.isArray(plan.itineraryDays) ? plan.itineraryDays[0] : null;
+                const title = (ui && ui.weatherSummary) || (firstDay && firstDay.weatherHint) || "Weather will appear here once travel data is available.";
+                return '<div class="w-full animate-slide-up pl-10 pr-2"><div class="rounded-3xl p-4 text-white shadow-xl" style="background:linear-gradient(135deg,#0F172A,#1D4ED8)"><div class="flex items-center justify-between"><div><p class="text-xs text-white/70 mb-1">Weather</p><h3 class="text-lg font-bold">' + escapeHtml(title) + '</h3></div><button class="text-xs bg-white/15 px-3 py-1.5 rounded-full" data-host-action="open_map">Map</button></div></div></div>';
+            }
+
+            function buildItineraryCard() {
+                const plan = getTravelPlan();
+                if (!plan || !Array.isArray(plan.itineraryDays) || plan.itineraryDays.length === 0) {
+                    return buildEmptyCard("Itinerary", "No generated itinerary yet. Ask AI to generate one.", "Generate plan", "generate_plan", {});
+                }
+
+                const preview = plan.itineraryDays.slice(0, 2).map((day) => {
+                    const items = Array.isArray(day.items) ? day.items.slice(0, 3) : [];
+                    return '<div class="relative pl-4 border-l-2 border-dashed border-gray-200">' +
+                        '<div class="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-brand-green"></div>' +
+                        '<h4 class="text-xs font-bold text-brand-green mb-1">Day ' + escapeHtml(day.dayIndex) + ': ' + escapeHtml(day.title || "") + '</h4>' +
+                        '<div class="bg-gray-50 p-2 rounded-lg text-[11px] text-gray-600 space-y-1">' +
+                        items.map((item) => '<p>' + escapeHtml((item.timeSlot ? item.timeSlot + ' ' : '') + item.title) + '</p>').join("") +
+                        '</div></div>';
+                }).join("");
+
+                return '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white border border-gray-100 p-4 rounded-2xl shadow-sm relative">' +
+                    '<div class="absolute left-0 top-0 bottom-0 w-1 bg-origami-gradient rounded-l-2xl"></div>' +
+                    '<h3 class="font-bold text-gray-800 mb-4 flex items-center justify-between"><span>' + escapeHtml((plan.brief && plan.brief.destination) || "Travel plan") + '</span><span class="text-[10px] bg-brand-light text-brand-green px-2 py-1 rounded-full">Ready</span></h3>' +
+                    '<div class="space-y-4">' + preview + '</div>' +
+                    '<button id="itinerary-expand-btn" class="w-full mt-4 py-2 rounded-xl bg-brand-light text-brand-green text-xs font-semibold">View itinerary</button>' +
+                    '</div></div>';
+            }
+
+            function buildRecommendationCards(category, items, emptyText) {
+                if (!Array.isArray(items) || items.length === 0) {
+                    return buildEmptyCard(category, emptyText, "Ask AI", "open_advanced_chat_controls", {});
+                }
+
+                return '<div class="flex flex-col gap-3 w-full animate-slide-up pl-10 pr-2">' +
+                    items.slice(0, 4).map((item) => {
+                        return '<div class="bg-card-gradient border border-white p-3 rounded-2xl shadow-glass relative overflow-hidden cursor-pointer" data-host-action="open_recommendation" data-host-payload="' + escapeHtml(JSON.stringify({ category: category.toLowerCase(), id: item.id || "", title: item.title || "" })) + '">' +
+                            '<div class="flex justify-between items-start gap-3">' +
+                            '<div class="min-w-0 flex-1"><h3 class="font-bold text-gray-800 text-sm">' + escapeHtml(item.title || "") + '</h3><div class="text-[11px] text-gray-500 mt-1">' + escapeHtml(item.subtitle || item.area || "") + '</div><div class="flex flex-wrap gap-1 mt-2">' + (Array.isArray(item.tags) ? item.tags.slice(0, 3).map((tag) => '<span class="px-2 py-0.5 rounded-full bg-white/70 text-[10px] text-gray-600">' + escapeHtml(tag) + '</span>').join("") : "") + '</div></div>' +
+                            '<div class="text-right shrink-0"><span class="text-brand-purple font-bold text-sm">' + escapeHtml(item.priceHint || item.ratingText || "Details") + '</span></div>' +
+                            '</div></div>';
+                    }).join("") +
+                    '</div>';
+            }
+
+            function buildMapCard() {
+                const plan = getTravelPlan();
+                const poiCount = plan && Array.isArray(plan.pois) ? plan.pois.length : 0;
+                return '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white p-2 rounded-2xl shadow-md border border-brand-green/20">' +
+                    '<div class="relative w-full h-40 rounded-xl overflow-hidden cursor-pointer group" id="map-fullscreen-btn">' +
+                    '<div class="w-full h-full bg-[radial-gradient(circle_at_top_left,_#6EE7B7,_#0F172A)]"></div>' +
+                    '<div class="absolute inset-0 bg-black/10"></div>' +
+                    '<div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2"><div class="w-8 h-8 bg-brand-green rounded-full flex items-center justify-center shadow-neon-green"><i data-lucide="map-pin" class="w-4 h-4 text-white"></i></div></div>' +
+                    '<div class="absolute bottom-2 right-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg text-white text-[10px] flex items-center gap-1 pointer-events-none"><i data-lucide="maximize" class="w-3 h-3"></i> Fullscreen</div>' +
+                    '</div><div class="mt-2 px-1 flex justify-between items-center"><p class="text-xs font-bold text-gray-800">Mapped points: ' + escapeHtml(String(poiCount)) + '</p><span class="text-[10px] text-brand-cyan flex items-center gap-1 cursor-pointer" data-host-action="open_map"><i data-lucide="navigation" class="w-3 h-3"></i> Open map</span></div></div></div>';
+            }
+
+            function buildProfileCard() {
+                const user = getUser();
+                const stats = Array.isArray(user.stats) ? user.stats : [];
+                const fallbackLabels = ["历史记录", "已收藏", "地图点位"];
+                return '<div class="w-full animate-slide-up pl-10 pr-2"><div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100"><div class="flex items-center gap-4 mb-4"><div class="w-12 h-12 rounded-full bg-origami-gradient p-[2px]"><div class="w-full h-full rounded-full border-2 border-white bg-white flex items-center justify-center text-brand-green font-bold">ME</div></div><div><h3 class="font-bold text-gray-800 text-sm">' + escapeHtml(user.name || "旅行用户") + '</h3><p class="text-[10px] text-gray-400">' + escapeHtml(user.subtitle || "") + '</p></div></div><div class="grid grid-cols-3 gap-2 mb-4">' +
+                    stats.slice(0, 3).map((stat, index) => '<button class="bg-gray-50 rounded-xl p-2 text-center ' + (index === 0 ? 'cursor-pointer hover:bg-brand-light transition-colors' : '') + '" ' + (index === 0 ? 'data-host-action="open_history"' : '') + '><p class="text-lg font-bold text-gray-800">' + escapeHtml(stat.value || "") + '</p><p class="text-[10px] text-gray-500">' + escapeHtml(fallbackLabels[index] || stat.label || "") + '</p></button>').join("") +
+                    '</div><div class="space-y-2"><button id="history-btn" class="w-full flex items-center justify-between p-3 rounded-xl bg-brand-light text-xs font-medium text-brand-green border border-brand-green/15"><span class="flex items-center gap-2"><i data-lucide="history" class="w-4 h-4"></i> 历史记录</span><i data-lucide="chevron-right" class="w-4 h-4"></i></button><button id="preference-btn" class="w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 text-xs font-medium text-gray-700"><span class="flex items-center gap-2"><i data-lucide="settings" class="w-4 h-4 text-gray-400"></i> 更多设置</span><i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i></button></div></div></div>';
+            }
+
+            function renderProfileOverlay() {
+                const user = getUser();
+                const plan = getTravelPlan();
+                const profileName = document.getElementById("profile-name");
+                const profileSubtitle = document.getElementById("profile-subtitle");
+                const profileStats = document.getElementById("profile-stats");
+                const historyContainer = document.getElementById("profile-tab-history");
+                const favoritesContainer = document.getElementById("profile-tab-favorites");
+                const currentTripSummary = hostState && hostState.currentTripSummary ? hostState.currentTripSummary : null;
+                const historyConversations = hostState && Array.isArray(hostState.historyConversations) ? hostState.historyConversations : [];
+                const historyTrips = hostState && Array.isArray(hostState.historyTrips) ? hostState.historyTrips : [];
+                const favoriteItems = hostState && Array.isArray(hostState.favoriteItems) ? hostState.favoriteItems : [];
+                const activeProfileTab = hostState && hostState.profileUiState && hostState.profileUiState.activeTab === "favorites" ? "favorites" : "history";
+                const stats = Array.isArray(user.stats) ? user.stats : [];
+                const hotels = plan && Array.isArray(plan.hotels) ? plan.hotels.slice(0, 2) : [];
+                const foods = plan && Array.isArray(plan.foods) ? plan.foods.slice(0, 2) : [];
+                const activities = plan && Array.isArray(plan.activities) ? plan.activities.slice(0, 2) : [];
+
+                function formatTimeLabel(value) {
+                    if (!value) return "";
+                    try {
+                        const date = new Date(value);
+                        if (Number.isNaN(date.getTime())) return "";
+                        const month = String(date.getMonth() + 1).padStart(2, "0");
+                        const day = String(date.getDate()).padStart(2, "0");
+                        const hour = String(date.getHours()).padStart(2, "0");
+                        const minute = String(date.getMinutes()).padStart(2, "0");
+                        return month + "-" + day + " " + hour + ":" + minute;
+                    } catch (error) {
+                        return "";
+                    }
+                }
+
+                if (profileName) {
+                    profileName.textContent = user.name || "旅行用户";
+                }
+                if (profileSubtitle) {
+                    profileSubtitle.textContent = user.subtitle || "旅途中";
+                }
+                if (profileStats) {
+                    const fallbackLabels = ["历史记录", "收藏推荐", "地图点位"];
+                    profileStats.innerHTML = stats.slice(0, 3).map((stat, index) =>
+                        '<button class="bg-gray-50 rounded-xl p-2 text-center ' + (index === 0 ? 'cursor-pointer hover:bg-brand-light transition-colors' : '') + '" ' + (index === 0 ? 'data-host-action="open_history"' : '') + '>' +
+                        '<p class="text-lg font-bold text-gray-800">' + escapeHtml(stat.value || "") + '</p>' +
+                        '<p class="text-[10px] text-gray-500">' + escapeHtml(fallbackLabels[index] || stat.label || "") + '</p>' +
+                        '</button>'
+                    ).join("");
+                }
+
+                document.querySelectorAll(".profile-tab").forEach(function (tabNode) {
+                    const tabKey = tabNode.getAttribute("data-profile-tab");
+                    const isActive = tabKey === activeProfileTab;
+                    tabNode.classList.toggle("active", isActive);
+                    tabNode.classList.toggle("text-gray-500", !isActive);
+                    tabNode.classList.toggle("bg-gray-50", !isActive);
+                });
+                if (historyContainer) historyContainer.classList.toggle("hidden", activeProfileTab !== "history");
+                if (favoritesContainer) favoritesContainer.classList.toggle("hidden", activeProfileTab !== "favorites");
+
+                if (historyContainer) {
+                    const conversationCards = historyConversations.length > 0
+                        ? historyConversations.map(function (item) {
+                            const timeLabel = formatTimeLabel(item.updatedAt);
+                            return '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 history-session-card">' +
+                                '<div class="flex items-start justify-between gap-3">' +
+                                '<div class="min-w-0 flex-1">' +
+                                '<div class="flex items-center gap-2 flex-wrap"><p class="text-xs font-bold text-gray-800">' + escapeHtml(item.title || "历史会话") + '</p>' +
+                                (timeLabel ? '<span class="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">' + escapeHtml(timeLabel) + '</span>' : '') +
+                                '</div>' +
+                                '<p class="text-[10px] text-gray-400 mt-1">' + escapeHtml(item.subtitle || "旅行记录") + '</p>' +
+                                '<p class="text-[11px] text-gray-500 leading-6 mt-2">' + escapeHtml(item.preview || "打开后继续查看完整对话与旅行上下文。") + '</p>' +
+                                '</div>' +
+                                '<button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-origami-gradient" data-host-action="resume_history_session" data-host-payload="' + escapeHtml(JSON.stringify({ conversationId: item.id })) + '">继续对话</button>' +
+                                '</div></div>';
+                        }).join("")
+                        : '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4"><p class="text-xs font-bold text-gray-800 mb-2">历史会话</p><p class="text-[11px] text-gray-500 leading-6">当前还没有可恢复的历史会话，后续聊天与旅行规划会自动出现在这里。</p></div>';
+                    const tripCards = historyTrips.length > 0
+                        ? historyTrips.map(function (item) {
+                            return '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 history-session-card">' +
+                                '<div class="flex items-start justify-between gap-3">' +
+                                '<div class="min-w-0 flex-1">' +
+                                '<p class="text-xs font-bold text-gray-800">' + escapeHtml(item.title || item.destination || "历史行程") + '</p>' +
+                                '<p class="text-[10px] text-gray-400 mt-1">' + escapeHtml(item.summary || item.dateRange || "已保存的旅行计划") + '</p>' +
+                                '</div>' +
+                                '<div class="flex flex-col gap-2 shrink-0">' +
+                                '<button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-brand-green bg-brand-light border border-brand-green/15" data-host-action="view_trip" data-host-payload="' + escapeHtml(JSON.stringify({ conversationId: item.conversationId })) + '">查看行程</button>' +
+                                '<button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-gradient-to-r from-brand-cyan to-brand-purple" data-host-action="replan_trip" data-host-payload="' + escapeHtml(JSON.stringify({ conversationId: item.conversationId })) + '">重新规划</button>' +
+                                '</div></div></div>';
+                        }).join("")
+                        : "";
+                    const currentTripCard = currentTripSummary
+                        ? '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 history-session-card"><div class="flex items-start justify-between gap-3"><div class="min-w-0 flex-1"><p class="text-xs font-bold text-gray-800">当前行程</p><p class="text-[10px] text-gray-400 mt-1">' + escapeHtml(currentTripSummary.summary || currentTripSummary.destination || "已进入当前旅行会话") + '</p></div><div class="flex flex-col gap-2 shrink-0"><button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-origami-gradient" data-host-action="open_itinerary">查看行程</button><button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-brand-purple bg-brand-purple/10" data-host-action="replan_trip" data-host-payload="' + escapeHtml(JSON.stringify({ conversationId: currentTripSummary.conversationId || "" })) + '">重新规划</button></div></div></div>'
+                        : '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 history-session-card"><div class="flex items-center justify-between gap-3"><div><p class="text-xs font-bold text-gray-800">当前行程</p><p class="text-[10px] text-gray-400 mt-1">还没有生成完整行程，完成一次旅行规划后会在这里显示。</p></div><button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-origami-gradient" data-host-action="open_advanced_chat_controls">去规划</button></div></div>';
+                    historyContainer.innerHTML =
+                        '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 history-session-card"><div class="flex items-center justify-between gap-3"><div><p class="text-xs font-bold text-gray-800">历史记录总览</p><p class="text-[10px] text-gray-400 mt-1">快速恢复旅行对话、查看历史行程，并继续调整当前计划。</p></div><button class="px-3 py-1.5 rounded-xl text-[11px] font-bold text-white bg-origami-gradient" data-host-action="open_history">打开历史</button></div></div>' +
+                        currentTripCard +
+                        conversationCards +
+                        tripCards +
+                        '<button id="profile-pref-btn" class="w-full flex items-center justify-between p-4 rounded-2xl bg-white border border-gray-100 shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><span class="flex items-center gap-2"><i data-lucide="settings" class="w-4 h-4 text-gray-400"></i> 偏好设置</span><i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i></button>';
+                }
+
+                if (favoritesContainer) {
+                    const allFavorites = favoriteItems.length > 0
+                        ? favoriteItems.map(function (item) {
+                            return { category: item.category || "favorite", item: item };
+                        })
+                        : []
+                            .concat(hotels.map((item) => ({ category: "hotel", item: item })))
+                            .concat(foods.map((item) => ({ category: "food", item: item })))
+                            .concat(activities.map((item) => ({ category: "activity", item: item })));
+
+                    if (allFavorites.length === 0) {
+                        favoritesContainer.innerHTML =
+                            '<div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">' +
+                            '<p class="text-xs font-bold text-gray-800 mb-2">收藏推荐</p>' +
+                            '<p class="text-[11px] text-gray-500 leading-6">当前还没有可展示的收藏推荐。你可以先生成行程，再从酒店、美食、活动中继续查看。</p>' +
+                            '</div>';
+                    } else {
+                        favoritesContainer.innerHTML = allFavorites.map(({ category, item }) =>
+                            '<button class="w-full text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-4 fav-item" ' +
+                            'data-fav-id="' + escapeHtml(item.id || "") + '" ' +
+                            'data-host-action="' + (item.nodeId || item.conversationId ? 'open_favorite_item' : 'open_recommendation') + '" ' +
+                            'data-host-payload="' + escapeHtml(JSON.stringify({ category: category, id: item.id || "", title: item.title || "", conversationId: item.conversationId || "", nodeId: item.nodeId || "" })) + '">' +
+                            '<div class="flex items-start justify-between gap-3">' +
+                            '<div class="min-w-0"><div class="flex items-center gap-2 flex-wrap"><p class="text-xs font-bold text-gray-800">' + escapeHtml(item.title || "") + '</p>' +
+                            '<span class="text-[10px] px-2 py-1 rounded-full bg-brand-light text-brand-green">' + escapeHtml(category === "hotel" ? "住宿" : category === "food" ? "美食" : category === "activity" ? "活动" : "收藏") + '</span></div>' +
+                            '<p class="text-[10px] text-gray-400 mt-1">' + escapeHtml(item.subtitle || item.area || item.reason || "") + '</p></div>' +
+                            '<button class="fav-remove-btn shrink-0 w-8 h-8 rounded-full bg-red-50 flex items-center justify-center" data-fav-id="' + escapeHtml(item.id || "") + '" data-fav-name="' + escapeHtml(item.title || "收藏项") + '"><i data-lucide="heart-off" class="w-3.5 h-3.5 text-red-400"></i></button>' +
+                            '</div></button>'
+                        ).join("");
+                    }
+                }
+                lucide.createIcons();
+            }
+
+            function openProfileOverlay() {
+                const overlay = document.getElementById("profile-overlay");
+                if (!overlay) return;
+                renderProfileOverlay();
+                overlay.classList.remove("hidden");
+                overlay.classList.add("flex");
+                emitHostAction("open_profile", { tab: "history" });
+            }
+
+            function closeProfileOverlay() {
+                const overlay = document.getElementById("profile-overlay");
+                if (!overlay) return;
+                overlay.classList.add("hidden");
+                overlay.classList.remove("flex");
+                emitHostAction("close_profile", {});
+            }
+
+            function renderChatContent() {
+                const container = document.getElementById("chat-container");
+                if (!container || !hostState) return;
+
+                const conversation = getConversation();
+                const plan = getTravelPlan();
+                const ui = getTravelUiState();
+                const sections = [];
+                const hasMessages = Array.isArray(conversation.messages) && conversation.messages.length > 0;
+                const hasItineraryDays = !!(plan && Array.isArray(plan.itineraryDays) && plan.itineraryDays.length > 0);
+                const hasHotels = !!(plan && Array.isArray(plan.hotels) && plan.hotels.length > 0);
+                const hasFoods = !!(plan && Array.isArray(plan.foods) && plan.foods.length > 0);
+                const hasActivities = !!(plan && Array.isArray(plan.activities) && plan.activities.length > 0);
+                const hasPois = !!(plan && Array.isArray(plan.pois) && plan.pois.length > 0);
+                const hasTravelContent = !!((ui && ui.weatherSummary) || hasItineraryDays || hasHotels || hasFoods || hasActivities || hasPois);
+
+                if (hasMessages) {
+                    sections.push(conversation.messages.map(buildMessageHtml).join(""));
+                } else {
+                    sections.push('<div class="flex items-start gap-2 w-full animate-slide-up"><div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1"><div class="w-full h-full bg-white rounded-full flex items-center justify-center text-brand-green font-bold text-xs">AI</div></div><div class="chat-bubble-ai px-4 py-3 max-w-[80%] text-sm text-gray-700 leading-relaxed">Tell me where you want to go, or use the shortcut tabs below.</div></div>');
+                }
+
+                if (currentTab === "itinerary") {
+                    sections.push(buildWeatherCard());
+                    sections.push(buildItineraryCard());
+                } else if (currentTab === "hotel") {
+                    sections.push(buildRecommendationCards("Hotel", plan && plan.hotels, "No hotel recommendations yet."));
+                } else if (currentTab === "food") {
+                    sections.push(buildRecommendationCards("Food", plan && plan.foods, "No food recommendations yet."));
+                } else if (currentTab === "activity") {
+                    sections.push(buildRecommendationCards("Activity", plan && plan.activities, "No activity recommendations yet."));
+                } else if (currentTab === "map") {
+                    sections.push(buildMapCard());
+                } else if (currentTab === "profile") {
+                    sections.push(buildProfileCard());
+                } else if (currentTab === "home") {
+                    if (!hasMessages) {
+                        sections.push(buildWeatherCard());
+                        sections.push(buildItineraryCard());
+                        sections.push(buildRecommendationCards("Hotel", plan && plan.hotels, "Use AI to generate hotel ideas."));
+                        sections.push(buildRecommendationCards("Food", plan && plan.foods, "Use AI to generate food ideas."));
+                        sections.push(buildRecommendationCards("Activity", plan && plan.activities, "Use AI to generate activity ideas."));
+                    } else if (hasTravelContent) {
+                        sections.push(buildWeatherCard());
+                        sections.push(buildItineraryCard());
+                        sections.push(buildRecommendationCards("Hotel", plan && plan.hotels, "Use AI to generate hotel ideas."));
+                        sections.push(buildRecommendationCards("Food", plan && plan.foods, "Use AI to generate food ideas."));
+                        sections.push(buildRecommendationCards("Activity", plan && plan.activities, "Use AI to generate activity ideas."));
+                    }
+                } else if (currentTab === "ai") {
+                    // AI 对话页只保留消息流与生成状态，避免每次发消息都重复回到首页空态卡片。
+                } else {
+                    sections.push(buildWeatherCard());
+                    sections.push(buildItineraryCard());
+                    sections.push(buildRecommendationCards("Hotel", plan && plan.hotels, "Use AI to generate hotel ideas."));
+                    sections.push(buildRecommendationCards("Food", plan && plan.foods, "Use AI to generate food ideas."));
+                    sections.push(buildRecommendationCards("Activity", plan && plan.activities, "Use AI to generate activity ideas."));
+                }
+
+                if (conversation.isGenerating) {
+                    sections.push('<div class="flex items-start gap-2 w-full animate-fade-in"><div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1"><div class="w-full h-full bg-white rounded-full flex items-center justify-center text-brand-green font-bold text-xs">AI</div></div><div class="chat-bubble-ai px-4 py-4 max-w-[80%] flex items-center gap-1"><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:0ms"></div><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:150ms"></div><div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:300ms"></div></div></div>');
+                }
+
+                const nextMarkup = sections.join("");
+                if (nextMarkup === lastChatMarkup) {
+                    updateQuickTabs();
+                    return;
+                }
+                lastChatMarkup = nextMarkup;
+                container.innerHTML = nextMarkup;
+                updateQuickTabs();
+                lucide.createIcons();
+                requestAnimationFrame(() => {
+                    container.scrollTop = container.scrollHeight;
+                });
+            }
+
+            function receiveState(nextState) {
+                hostState = nextState || null;
+                if (hostState && hostState.currentTab) {
+                    currentTab = hostState.currentTab;
+                }
+                renderHeader();
+                renderChatContent();
+                renderProfileOverlay();
+            }
+
+            window.__ZHITU_RECEIVE_STATE__ = function (payload) {
+                if (!payload) return;
+                if (typeof payload === "string") {
+                    try {
+                        receiveState(JSON.parse(payload));
+                    } catch (error) {
+                        console.error("Failed to parse Zhitu state", error);
+                    }
+                    return;
+                }
+                receiveState(payload);
+            };
+
+            window.addEventListener("message", function (event) {
+                const data = event && event.data;
+                if (!data || data.channel !== CHANNEL || data.type !== "state") return;
+                receiveState(data.payload);
+            });
+
+            document.addEventListener("DOMContentLoaded", function () {
+                ensureEmbeddedLayout();
+                window.openProfileOverlay = openProfileOverlay;
+                window.closeProfileOverlay = closeProfileOverlay;
+
+                const input = document.getElementById("chat-input");
+                if (input && !input.dataset.zhituBound) {
+                    input.dataset.zhituBound = "1";
+                    input.addEventListener("keydown", function (event) {
+                        if (!isEmbeddedHost()) return;
+                        if (event.key !== "Enter" || event.shiftKey) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        const value = input.value || "";
+                        emitHostAction("send_message", { text: value });
+                        input.value = "";
+                    }, true);
+                }
+
+                if (hostState) {
+                    renderHeader();
+                    renderChatContent();
+                    renderProfileOverlay();
+                }
+            });
+
+            document.addEventListener("click", function (event) {
+                if (!isEmbeddedHost()) return;
+
+                const target = event.target;
+                if (!target || !target.closest) return;
+
+                const sendButton = target.closest("#send-btn");
+                if (sendButton) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const input = document.getElementById("chat-input");
+                    emitHostAction("send_message", { text: input ? input.value : "" });
+                    if (input) input.value = "";
+                    return;
+                }
+
+                const quickTab = target.closest(".quick-tab[data-tab]");
+                if (quickTab) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const tab = quickTab.getAttribute("data-tab") || "home";
+                    currentTab = tab;
+                    updateQuickTabs();
+                    renderChatContent();
+                    emitHostAction("switch_tab", { tab: tab });
+                    return;
+                }
+
+                if (target.closest("#header-map-btn") || target.closest("#map-fullscreen-btn")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    currentTab = "map";
+                    renderChatContent();
+                    emitHostAction("open_map", {});
+                    return;
+                }
+
+                if (target.closest("#user-avatar-btn")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openProfileOverlay();
+                    return;
+                }
+
+                if (target.closest("#ai-avatar-btn") || target.closest("#history-btn")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    emitHostAction("open_history", {});
+                    return;
+                }
+
+                if (target.closest("#preference-btn") || target.closest("#preference-save-btn")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    emitHostAction("open_settings_or_more", {});
+                    return;
+                }
+
+                if (target.closest("#profile-pref-btn")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    emitHostAction("open_settings_or_more", {});
+                    return;
+                }
+
+                if (target.closest("#profile-overlay-close") || target.id === "profile-overlay") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeProfileOverlay();
+                    return;
+                }
+
+                const profileTab = target.closest(".profile-tab[data-profile-tab]");
+                if (profileTab) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const tabKey = profileTab.getAttribute("data-profile-tab");
+                    document.querySelectorAll(".profile-tab").forEach((tab) => {
+                        tab.classList.remove("active");
+                        tab.classList.add("text-gray-500", "bg-gray-50");
+                    });
+                    profileTab.classList.add("active");
+                    profileTab.classList.remove("text-gray-500", "bg-gray-50");
+                    const historyTab = document.getElementById("profile-tab-history");
+                    const favoritesTab = document.getElementById("profile-tab-favorites");
+                    if (historyTab) historyTab.classList.toggle("hidden", tabKey !== "history");
+                    if (favoritesTab) favoritesTab.classList.toggle("hidden", tabKey !== "favorites");
+                    emitHostAction("switch_profile_tab", { tab: tabKey });
+                    return;
+                }
+
+                if (target.closest("#itinerary-export-btn")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    emitHostAction("export_itinerary", {});
+                    return;
+                }
+
+                if (target.closest("#itinerary-share-btn")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    emitHostAction("share_itinerary", {});
+                    return;
+                }
+
+                if (target.closest("#itinerary-expand-btn")) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    currentTab = "itinerary";
+                    renderChatContent();
+                    emitHostAction("open_itinerary", {});
+                    return;
+                }
+
+                const actionNode = target.closest("[data-host-action]");
+                if (actionNode) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    let payload = {};
+                    try {
+                        payload = JSON.parse(actionNode.getAttribute("data-host-payload") || "{}");
+                    } catch (error) {
+                        payload = {};
+                    }
+                    emitHostAction(actionNode.getAttribute("data-host-action"), payload);
+                }
+            }, true);
+        })();
+    </script>
+
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
+

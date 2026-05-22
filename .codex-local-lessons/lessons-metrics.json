@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "scope": "project-local",
+  "last_updated": "2026-05-30",
+  "retention_policy": {
+    "archive_after_miss_streak": 200,
+    "archive_after_failure_count": 5,
+    "archive_requires_success_not_greater_than_failure": true,
+    "delete_requires_manual_confirmation": true
+  },
+  "lessons": {}
+}

@@ -15,6 +15,7 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.insertSeparators
 import androidx.paging.map
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -217,6 +218,16 @@ class ChatVM(
     }.stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     // 错误状态
+    val historyConversationCount: StateFlow<Int> =
+        settings.map { it.assistantId }
+            .distinctUntilChanged()
+            .flatMapLatest { assistantId ->
+                conversationRepo.getConversationsOfAssistant(assistantId).map { conversations ->
+                    conversations.size
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
+
     val errors: StateFlow<List<ChatError>> = chatService.errors
 
     fun dismissError(id: Uuid) = chatService.dismissError(id)
@@ -428,10 +439,7 @@ class ChatVM(
                 currentConversation
             }
             chatService.saveConversation(_conversationId, updatedConversation)
-            chatService.sendMessage(
-                _conversationId,
-                listOf(UIMessagePart.Text(prompt))
-            )
+            chatService.submitTravelPlanningRequest(_conversationId, prompt)
         }
     }
 
@@ -602,16 +610,28 @@ class ChatVM(
                     travelPlanningDataRepository.resolveAddress(suggestion.name) ?: suggestion
                 }
                 val location = resolvedSuggestion.lat?.let { lat -> resolvedSuggestion.lon?.let { lon -> lat to lon } }
-                val weatherSummary = travelPlanningDataRepository.getCurrentWeatherSummary(resolvedSuggestion.name)
-                val hotels = location?.let {
-                    travelPlanningDataRepository.searchNearbyPois(it, TravelRecommendationCategory.hotel)
-                }.orEmpty()
-                val foods = location?.let {
-                    travelPlanningDataRepository.searchNearbyPois(it, TravelRecommendationCategory.food)
-                }.orEmpty()
-                val activities = location?.let {
-                    travelPlanningDataRepository.searchNearbyPois(it, TravelRecommendationCategory.activity)
-                }.orEmpty()
+                val weatherDeferred = async {
+                    travelPlanningDataRepository.getCurrentWeatherSummary(resolvedSuggestion.name)
+                }
+                val hotelsDeferred = async {
+                    location?.let {
+                        travelPlanningDataRepository.searchNearbyPois(it, TravelRecommendationCategory.hotel)
+                    }.orEmpty()
+                }
+                val foodsDeferred = async {
+                    location?.let {
+                        travelPlanningDataRepository.searchNearbyPois(it, TravelRecommendationCategory.food)
+                    }.orEmpty()
+                }
+                val activitiesDeferred = async {
+                    location?.let {
+                        travelPlanningDataRepository.searchNearbyPois(it, TravelRecommendationCategory.activity)
+                    }.orEmpty()
+                }
+                val weatherSummary = weatherDeferred.await()
+                val hotels = hotelsDeferred.await()
+                val foods = foodsDeferred.await()
+                val activities = activitiesDeferred.await()
                 val mapPois = buildList {
                     resolvedSuggestion.lat?.let { lat ->
                         resolvedSuggestion.lon?.let { lon ->

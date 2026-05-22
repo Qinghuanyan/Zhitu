@@ -18,10 +18,11 @@ import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
 import kotlin.uuid.Uuid
 
 val DEFAULT_AUTO_MODEL_ID = Uuid.parse("b7055fb4-39f9-4042-a88a-0d80ed76cf08")
-private const val DEFAULT_OPENAI_FALLBACK_BASE_URL = "https://free.codesonline.dev/v1"
+private val DEFAULT_DEEPSEEK_MODEL_ID = Uuid.parse("0f0fb0e0-6dc4-4d93-8a8e-2fb5caa7b9f0")
+private const val DEFAULT_OPENAI_FALLBACK_BASE_URL = "https://api.psydo.top/v1"
 private const val DEFAULT_OPENAI_FALLBACK_MODEL_ID = "gpt-5.4"
 private const val DEFAULT_OPENAI_FALLBACK_MODEL_NAME = "GPT-5.4"
-private const val DEFAULT_OPENAI_FALLBACK_API_KEY = "sk-7829e93e862f635d93dcb89407d701209c5afdd797923f77ba8415386d42e114"
+private const val DEFAULT_OPENAI_FALLBACK_API_KEY = "sk-428f7c2c097acd96917eeeeeb45b455f794cb849ff677aa5ef62ef18429e972a"
 
 val DEFAULT_PROVIDERS = listOf(
     ProviderSetting.OpenAI(
@@ -117,8 +118,18 @@ val DEFAULT_PROVIDERS = listOf(
         id = Uuid.parse("f099ad5b-ef03-446d-8e78-7e36787f780b"),
         name = "DeepSeek",
         baseUrl = "https://api.deepseek.com/v1",
-        apiKey = "",
+        apiKey = "sk-e67f8507decf44209ff2c3710bd99d23",
         builtIn = true,
+        models = listOf(
+            Model(
+                id = DEFAULT_DEEPSEEK_MODEL_ID,
+                modelId = "deepseek-chat",
+                displayName = "DeepSeek Chat",
+                inputModalities = listOf(Modality.TEXT),
+                outputModalities = listOf(Modality.TEXT),
+                abilities = listOf(ModelAbility.TOOL),
+            )
+        ),
         balanceOption = BalanceOption(
             enabled = true,
             apiPath = "/user/balance",

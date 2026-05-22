@@ -1,5 +1,8 @@
 ﻿package me.rerere.rikkahub.data.repository
 
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
@@ -27,11 +30,22 @@ class TravelPlanningDataRepository(
     private val amapApi: AmapWebServiceApi,
     private val qWeatherApi: QWeatherApi,
 ) {
+    private val suggestionsCache = TimedCache<String, List<TravelSearchSuggestion>>()
+    private val resolveAddressCache = TimedCache<String, TravelSearchSuggestion?>()
+    private val weatherSummaryCache = TimedCache<String, List<TravelWeatherDay>>()
+    private val currentWeatherCache = TimedCache<String, String>()
+    private val nearbyPoisCache = TimedCache<String, List<TravelRecommendationItem>>()
+    private val routeHintsCache = TimedCache<String, List<TravelRouteHint>>()
+
     suspend fun searchDestinationSuggestions(query: String): List<TravelSearchSuggestion> {
         if (query.isBlank() || BuildConfig.AMAP_WEB_API_KEY.isBlank()) return emptyList()
+        val normalizedQuery = query.trim()
+        suggestionsCache.get(normalizedQuery)?.let { return it }
         return runCatching {
-            amapApi.inputTips(key = BuildConfig.AMAP_WEB_API_KEY, keywords = query.trim()).tips.mapNotNull(::tipToSuggestion)
-        }.getOrDefault(emptyList())
+            amapApi.inputTips(key = BuildConfig.AMAP_WEB_API_KEY, keywords = normalizedQuery).tips.mapNotNull(::tipToSuggestion)
+        }.getOrDefault(emptyList()).also {
+            suggestionsCache.put(normalizedQuery, it)
+        }
     }
 
     suspend fun searchPois(keyword: String, cityOrLocation: String? = null): List<TravelPoi> {
@@ -45,8 +59,18 @@ class TravelPlanningDataRepository(
         if (BuildConfig.AMAP_WEB_API_KEY.isBlank()) return emptyList()
         val (lat, lon) = location
         val keywords = keyword?.takeIf { it.isNotBlank() }?.let(::listOf) ?: defaultKeywords(category)
+        val cacheKey = buildString {
+            append(category.name)
+            append('|')
+            append(lat)
+            append(',')
+            append(lon)
+            append('|')
+            append(keywords.joinToString(","))
+        }
+        nearbyPoisCache.get(cacheKey)?.let { return it }
         val results = mutableListOf<TravelRecommendationItem>()
-        keywords.forEach { term ->
+        for (term in keywords) {
             val items = runCatching {
                 amapApi.searchAround(
                     key = BuildConfig.AMAP_WEB_API_KEY,
@@ -56,16 +80,26 @@ class TravelPlanningDataRepository(
                 ).pois.map { poiToRecommendation(it, category) }
             }.getOrDefault(emptyList())
             results += items
-            if (results.isNotEmpty()) return@forEach
+            if (results.isNotEmpty()) break
         }
         return results
             .filter { it.lat != null && it.lon != null }
             .distinctBy { it.id }
+            .take(12)
+            .also {
+                nearbyPoisCache.put(cacheKey, it)
+            }
     }
 
     suspend fun resolveAddress(address: String): TravelSearchSuggestion? {
         if (address.isBlank() || BuildConfig.AMAP_WEB_API_KEY.isBlank()) return null
-        return runCatching { amapApi.geocode(key = BuildConfig.AMAP_WEB_API_KEY, address = address.trim()).geocodes.firstOrNull()?.let(::geocodeToSuggestion) }.getOrNull()
+        val normalizedAddress = address.trim()
+        resolveAddressCache.get(normalizedAddress)?.let { return it }
+        return runCatching {
+            amapApi.geocode(key = BuildConfig.AMAP_WEB_API_KEY, address = normalizedAddress).geocodes.firstOrNull()?.let(::geocodeToSuggestion)
+        }.getOrNull().also {
+            resolveAddressCache.put(normalizedAddress, it)
+        }
     }
 
     suspend fun resolveLatLon(lat: Double, lon: Double): TravelSearchSuggestion? {
@@ -88,24 +122,33 @@ class TravelPlanningDataRepository(
 
     suspend fun getWeatherSummary(destination: String, days: Int?): List<TravelWeatherDay> {
         if (destination.isBlank()) return emptyList()
+        val cacheKey = "${destination.trim()}|${days ?: 0}"
+        weatherSummaryCache.get(cacheKey)?.let { return it }
         val qWeather = runCatching {
             val city = qWeatherApi.cityLookup(location = destination.trim(), key = qWeatherQueryKey(), authorization = qWeatherAuthorization()).location.firstOrNull() ?: return@runCatching emptyList()
             val daily = if ((days ?: 0) in 1..3) qWeatherApi.weather3d(location = city.id, key = qWeatherQueryKey(), authorization = qWeatherAuthorization()).daily else qWeatherApi.weather7d(location = city.id, key = qWeatherQueryKey(), authorization = qWeatherAuthorization()).daily
             daily.map(::dailyToWeatherDay)
         }.getOrDefault(emptyList())
-        if (qWeather.isNotEmpty()) return qWeather
+        if (qWeather.isNotEmpty()) {
+            weatherSummaryCache.put(cacheKey, qWeather)
+            return qWeather
+        }
         if (BuildConfig.AMAP_WEB_API_KEY.isBlank()) return emptyList()
         return runCatching {
             val suggestion = resolveAddress(destination) ?: searchDestinationSuggestions(destination).firstOrNull() ?: return@runCatching emptyList()
             val adCode = suggestion.adCode.takeIf { it.isNotBlank() } ?: return@runCatching emptyList()
             amapApi.weatherForecast(key = BuildConfig.AMAP_WEB_API_KEY, city = adCode).forecasts.firstOrNull()?.casts.orEmpty().map(::forecastToWeatherDay)
-        }.getOrDefault(emptyList())
+        }.getOrDefault(emptyList()).also {
+            weatherSummaryCache.put(cacheKey, it)
+        }
     }
 
     suspend fun getCurrentWeatherSummary(destination: String): String {
         if (destination.isBlank()) return ""
+        val normalizedDestination = destination.trim()
+        currentWeatherCache.get(normalizedDestination)?.let { return it }
         val qWeather = runCatching {
-            val city = qWeatherApi.cityLookup(location = destination.trim(), key = qWeatherQueryKey(), authorization = qWeatherAuthorization()).location.firstOrNull() ?: return@runCatching ""
+            val city = qWeatherApi.cityLookup(location = normalizedDestination, key = qWeatherQueryKey(), authorization = qWeatherAuthorization()).location.firstOrNull() ?: return@runCatching ""
             val now = qWeatherApi.weatherNow(location = city.id, key = qWeatherQueryKey(), authorization = qWeatherAuthorization()).now ?: return@runCatching ""
             buildString {
                 append(now.text.ifBlank { "天气" })
@@ -113,7 +156,10 @@ class TravelPlanningDataRepository(
                 if (now.windDir.isNotBlank()) append(" · ${now.windDir} ${now.windScale}级")
             }
         }.getOrDefault("")
-        if (qWeather.isNotBlank()) return qWeather
+        if (qWeather.isNotBlank()) {
+            currentWeatherCache.put(normalizedDestination, qWeather)
+            return qWeather
+        }
         if (BuildConfig.AMAP_WEB_API_KEY.isBlank()) return ""
         return runCatching {
             val suggestion = resolveAddress(destination) ?: searchDestinationSuggestions(destination).firstOrNull() ?: return@runCatching ""
@@ -124,10 +170,25 @@ class TravelPlanningDataRepository(
                 if (live.temperature.isNotBlank()) append(" ${live.temperature}°C")
                 if (live.winddirection.isNotBlank()) append(" · ${live.winddirection} ${live.windpower}级")
             }
-        }.getOrDefault("")
+        }.getOrDefault("").also {
+            currentWeatherCache.put(normalizedDestination, it)
+        }
     }
     suspend fun buildRouteHints(poiSequence: List<TravelPoi>, city: String? = null): List<TravelRouteHint> {
         if (BuildConfig.AMAP_WEB_API_KEY.isBlank() || poiSequence.size < 2) return emptyList()
+        val cacheKey = buildString {
+            append(city.orEmpty())
+            append('|')
+            poiSequence.forEach { poi ->
+                append(poi.id)
+                append('@')
+                append(poi.lat ?: "")
+                append(',')
+                append(poi.lon ?: "")
+                append('|')
+            }
+        }
+        routeHintsCache.get(cacheKey)?.let { return it }
         return poiSequence.zipWithNext().mapNotNull { (from, to) ->
             val fromLat = from.lat ?: return@mapNotNull null
             val fromLon = from.lon ?: return@mapNotNull null
@@ -154,18 +215,25 @@ class TravelPlanningDataRepository(
                 null,
                 if (distance <= 1500) "从${from.name}步行到${to.name}" else "从${from.name}前往${to.name}，建议优先地铁/公交，不便时可打车"
             )
+        }.also {
+            routeHintsCache.put(cacheKey, it)
         }
     }
 
-    suspend fun buildPlanningFacts(destination: String, days: Int?, origin: String? = null, transportPreferences: List<String> = emptyList()): TravelPlanningFacts {
+    suspend fun buildPlanningFacts(destination: String, days: Int?, origin: String? = null, transportPreferences: List<String> = emptyList()): TravelPlanningFacts = coroutineScope {
         val destinationFacts = searchDestinationSuggestions(destination).take(3)
         val resolved = destinationFacts.firstOrNull() ?: resolveAddress(destination)
         val location = resolved?.lat?.let { lat -> resolved.lon?.let { lon -> lat to lon } }
-        val hotels = location?.let { searchNearbyPois(it, TravelRecommendationCategory.hotel) }.orEmpty()
-        val foods = location?.let { searchNearbyPois(it, TravelRecommendationCategory.food) }.orEmpty()
-        val activities = location?.let { searchNearbyPois(it, TravelRecommendationCategory.activity) }.orEmpty()
+        val hotelsDeferred = async { location?.let { searchNearbyPois(it, TravelRecommendationCategory.hotel) }.orEmpty() }
+        val foodsDeferred = async { location?.let { searchNearbyPois(it, TravelRecommendationCategory.food) }.orEmpty() }
+        val activitiesDeferred = async { location?.let { searchNearbyPois(it, TravelRecommendationCategory.activity) }.orEmpty() }
+        val weatherDeferred = async { getWeatherSummary(destination, days) }
+        val hotels = hotelsDeferred.await()
+        val foods = foodsDeferred.await()
+        val activities = activitiesDeferred.await()
         val candidatePois = (hotels.map(::recommendationToPoi) + foods.map(::recommendationToPoi) + activities.map(::recommendationToPoi)).distinctBy { it.id }
-        return TravelPlanningFacts(
+        val routeHintsDeferred = async { buildRouteHints(candidatePois.take(4), resolved?.city) }
+        TravelPlanningFacts(
             destinationFacts = destinationFacts,
             candidatePois = candidatePois,
             nearbyHotels = hotels,
@@ -174,8 +242,8 @@ class TravelPlanningDataRepository(
             commercialHotels = hotels.filter { it.priceHint.isNotBlank() || it.ratingText.isNotBlank() },
             commercialActivities = activities.filter { it.priceHint.isNotBlank() || it.ratingText.isNotBlank() },
             intercityTransportHints = buildIntercityTransportHints(origin, destination, transportPreferences),
-            dailyWeather = getWeatherSummary(destination, days),
-            routeHints = buildRouteHints(candidatePois.take(4), resolved?.city),
+            dailyWeather = weatherDeferred.await(),
+            routeHints = routeHintsDeferred.await(),
         )
     }
 
@@ -290,4 +358,29 @@ class TravelPlanningDataRepository(
     private fun qWeatherQueryKey(): String? { val token = BuildConfig.QWEATHER_AUTH_TOKEN.trim(); return BuildConfig.QWEATHER_API_KEY.takeIf { token.isBlank() && it.isNotBlank() } }
     private fun parseLocation(location: String): Pair<Double?, Double?> { if (location.isBlank() || !location.contains(",")) return null to null; val lon = location.substringBefore(",").toDoubleOrNull(); val lat = location.substringAfter(",").toDoubleOrNull(); return lat to lon }
     private fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double { val r = 6371000.0; val dLat = Math.toRadians(lat2 - lat1); val dLon = Math.toRadians(lon2 - lon1); val a = sin(dLat / 2).pow(2.0) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2.0); val c = 2 * atan2(sqrt(a), sqrt(1 - a)); return r * c }
+
+    private class TimedCache<K, V>(
+        private val ttlMillis: Long = 5 * 60 * 1000,
+    ) {
+        private val storage = ConcurrentHashMap<K, Entry<V>>()
+
+        fun get(key: K): V? {
+            val now = System.currentTimeMillis()
+            val entry = storage[key] ?: return null
+            if (now - entry.timestamp > ttlMillis) {
+                storage.remove(key, entry)
+                return null
+            }
+            return entry.value
+        }
+
+        fun put(key: K, value: V) {
+            storage[key] = Entry(value, System.currentTimeMillis())
+        }
+
+        private data class Entry<V>(
+            val value: V,
+            val timestamp: Long,
+        )
+    }
 }

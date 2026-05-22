@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "scope": "project-local",
+  "last_updated": "2026-05-30",
+  "categories": {
+    "WORKFLOW": [],
+    "DEBUGGING": [],
+    "UI_UX": [
+      {
+        "id": "LESSON-20260530-01",
+        "category": "UI_UX",
+        "tags": [
+          "retrospective",
+          "session-automation",
+          "candidate-tier",
+          "synthesized"
+        ],
+        "keywords": [
+          "aab",
+          "and",
+          "apk",
+          "app",
+          "as",
+          "before",
+          "build",
+          "chatmapdrawer",
+          "chatvm",
+          "competition",
+          "complete",
+          "d",
+          "display",
+          "implementation",
+          "keep",
+          "kt",
+          "outputs",
+          "release",
+          "session",
+          "she",
+          "shensibei",
+          "spans",
+          "styling",
+          "sum",
+          "synchronized",
+          "text",
+          "the",
+          "travelplanningdatarepository",
+          "treating",
+          "ui",
+          "universal",
+          "when",
+          "work",
+          "zhitu"
+        ],
+        "applies_when": "已完成，`release APK` 和 `release AAB` 都打出来了。 ### 产物 #### APK - `D:\\SUM\\competition\\shensibei\\Zhitu\\app\\build\\outputs\\apk\\release\\app-universal-release.apk` - `D:\\SUM\\competition\\she...",
+        "updated_at": "2026-05-30",
+        "archived": false
+      }
+    ],
+    "SECURITY": [],
+    "CTF": [],
+    "TOOLING": [],
+    "ENVIRONMENT": [],
+    "PERFORMANCE": [],
+    "DOCUMENTATION": []
+  }
+}

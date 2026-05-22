@@ -11,3 +11,5 @@ local.properties
 .cursor
 .history
 .kotlin
+.tools/gradle-9.1.0-bin.zip
+.tools/gradle-9.1.0/

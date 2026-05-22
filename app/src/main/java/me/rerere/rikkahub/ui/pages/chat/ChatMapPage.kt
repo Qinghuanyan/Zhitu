@@ -24,7 +24,7 @@ import kotlin.uuid.Uuid
 @Composable
 fun ChatMapPage(
     chatId: Uuid,
-    nodeId: Uuid? = null,
+    highlightPoiId: String? = null,
 ) {
     val vm: ChatVM = koinViewModel(parameters = { parametersOf(chatId.toString()) })
     val conversation by vm.conversation.collectAsStateWithLifecycle()
@@ -44,7 +44,7 @@ fun ChatMapPage(
                 .padding(innerPadding)
                 .fillMaxSize(),
             travelPois = conversation.travelPlan?.pois ?: emptyList(),
-            highlightPoiId = nodeId?.toString(),
+            highlightPoiId = highlightPoiId,
             onOpenInternalWebView = { url -> nav.navigate(Screen.WebView(url = url)) },
         )
     }

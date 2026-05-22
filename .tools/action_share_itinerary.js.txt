@@ -1,0 +1,9 @@
+(function () {
+  const btn = document.querySelector('[data-zhitu-action="share_itinerary"]');
+  if (!btn) return "missing-share-itinerary";
+  btn.click();
+  return JSON.stringify({
+    currentTab: window.__ZHITU_STATE__ && window.__ZHITU_STATE__.currentTab,
+    title: document.title,
+  });
+})()

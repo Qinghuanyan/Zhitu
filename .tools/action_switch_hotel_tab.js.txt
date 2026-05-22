@@ -1,0 +1,10 @@
+(function () {
+  const btn = document.querySelector('.quick-tab[data-tab="hotel"]');
+  if (!btn) return "missing-hotel-tab";
+  btn.click();
+  const chat = document.getElementById("chat-container");
+  return JSON.stringify({
+    currentTab: window.__ZHITU_STATE__ && window.__ZHITU_STATE__.currentTab,
+    chatText: (chat && chat.innerText || "").slice(0, 1000),
+  });
+})()

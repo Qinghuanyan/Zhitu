@@ -18,7 +18,27 @@ import { ChatMessage } from "~/components/message/chat-message";
 import { Button } from "~/components/ui/button";
 import { Drawer, DrawerContent } from "~/components/ui/drawer";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "~/components/ui/resizable";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "~/components/ui/sheet";
 import { TypingIndicator } from "~/components/ui/typing-indicator";
+import { ZhituShellFrame } from "~/components/zhitu/zhitu-shell-frame";
+import type {
+  ZhituShellActionPayload,
+  ZhituShellCurrentTripSummary,
+  ZhituShellFavoriteItem,
+  ZhituShellHistoryConversation,
+  ZhituShellHistoryTrip,
+  ZhituShellMessage,
+  ZhituShellRecommendation,
+  ZhituShellStatePayload,
+  ZhituShellTab,
+  ZhituShellTravelPlan,
+} from "~/components/zhitu/types";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
 import { useIsMobile } from "~/hooks/use-mobile";
 import { toConversationSummaryUpdate, useConversationList } from "~/hooks/use-conversation-list";
@@ -46,12 +66,18 @@ import {
   type Settings,
   type UIMessagePart,
 } from "~/types";
+import type {
+  TravelItineraryDayDto,
+  TravelPlanDto,
+  TravelRecommendationItemDto,
+} from "~/types/dto";
 import { MessageSquare } from "lucide-react";
 import Logo from "~/components/logo";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
+import zhituHtml from "virtual:zhitu-html";
 import i18n from "~/i18n";
 
 type ConversationStreamEvent =
@@ -69,6 +95,234 @@ const EDIT_DRAFT_ATTACHMENT_MARK = "__from_message_attachment";
 const EDIT_DRAFT_SOURCE_INDEX = "__from_message_source_index";
 const EMPTY_INPUT_ATTACHMENTS: UIMessagePart[] = [];
 const EMPTY_SUGGESTIONS: string[] = [];
+const DEFAULT_TRAVEL_PLAN_PROMPT =
+  "Please generate a detailed travel plan based on the current conversation, including itinerary, hotels, food, activities, and map highlights.";
+
+function normalizeShellTab(value: string | undefined | null): ZhituShellTab {
+  switch ((value ?? "").toLowerCase()) {
+    case "map":
+      return "map";
+    case "plan":
+    case "trip":
+    case "itinerary":
+    case "schedule":
+      return "itinerary";
+    case "hotel":
+    case "hotels":
+      return "hotel";
+    case "food":
+    case "foods":
+      return "food";
+    case "activity":
+    case "activities":
+      return "activity";
+    case "mine":
+    case "my":
+    case "profile":
+      return "profile";
+    case "ai":
+    case "assistant":
+      return "ai";
+    default:
+      return "home";
+  }
+}
+
+function getMessageText(parts: UIMessagePart[]): string {
+  const text = parts
+    .flatMap((part) => {
+      switch (part.type) {
+        case "text":
+          return [part.text];
+        case "reasoning":
+          return part.reasoning.trim().length > 0 ? [part.reasoning] : [];
+        case "document":
+          return [part.fileName];
+        case "tool":
+          return [part.toolName];
+        default:
+          return [];
+      }
+    })
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .join("\n")
+    .trim();
+
+  return text;
+}
+
+function toZhituShellMessage(message: MessageDto): ZhituShellMessage {
+  const text = getMessageText(message.parts);
+  return {
+    id: message.id,
+    role: message.role,
+    text: text.length > 0 ? text : "[non-text message]",
+    createdAt: message.createdAt,
+  };
+}
+
+function formatTravelSummary(plan: TravelPlanDto | null | undefined): string {
+  if (!plan?.brief) return "";
+
+  const parts = [
+    plan.brief.destination,
+    plan.brief.dateRange,
+    plan.brief.days ? `${plan.brief.days} 天` : "",
+  ].filter((value) => typeof value === "string" && value.trim().length > 0);
+
+  if (parts.length > 0) {
+    return parts.join(" · ");
+  }
+
+  return plan.itineraryDays.length > 0 ? `已生成 ${plan.itineraryDays.length} 天行程` : "";
+}
+
+function toZhituRecommendation(item: TravelRecommendationItemDto): ZhituShellRecommendation {
+  return {
+    id: item.id,
+    title: item.title,
+    subtitle: item.subtitle,
+    tags: item.tags,
+    reason: item.reason,
+    priceHint: item.priceHint,
+    ratingText: item.ratingText,
+    area: item.area,
+    inventoryHint: item.inventoryHint,
+    bookingUrl: item.bookingUrl,
+    lat: item.lat,
+    lon: item.lon,
+  };
+}
+
+function toZhituTravelPlan(plan: TravelPlanDto | null | undefined): ZhituShellTravelPlan | null {
+  if (!plan) return null;
+
+  return {
+    brief: plan.brief
+      ? {
+          destination: plan.brief.destination,
+          origin: plan.brief.origin,
+          dateRange: plan.brief.dateRange,
+          days: plan.brief.days,
+          travelerCount: plan.brief.travelerCount,
+          budgetText: plan.brief.budgetText,
+          budgetLevel: plan.brief.budgetLevel,
+          travelStyleTags: plan.brief.travelStyleTags,
+          transportPreferences: plan.brief.transportPreferences,
+          userIntentSummary: plan.brief.userIntentSummary,
+        }
+      : null,
+    hotels: plan.hotels.map(toZhituRecommendation),
+    foods: plan.foods.map(toZhituRecommendation),
+    activities: plan.activities.map(toZhituRecommendation),
+    pois: plan.pois.map((item) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      address: item.address,
+      lat: item.lat,
+      lon: item.lon,
+    })),
+    itineraryDays: plan.itineraryDays.map((day: TravelItineraryDayDto) => ({
+      dayIndex: day.dayIndex,
+      title: day.title,
+      dateText: day.dateText,
+      weatherHint: day.weatherHint,
+      items: day.items.map((item) => ({
+        id: item.id,
+        timeSlot: item.timeSlot,
+        title: item.title,
+        description: item.description,
+        category: item.category,
+        estimatedCost: item.estimatedCost,
+        transportHint: item.transportHint,
+      })),
+    })),
+    status: plan.status,
+  };
+}
+
+function toHistoryConversationSummary(
+  conversation: ConversationDto,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): ZhituShellHistoryConversation {
+  const selectedNode =
+    conversation.messages[conversation.truncateIndex] ??
+    conversation.messages[conversation.messages.length - 1];
+  const selectedMessage =
+    selectedNode?.messages[selectedNode.selectIndex] ??
+    selectedNode?.messages[selectedNode.messages.length - 1] ??
+    null;
+
+  return {
+    id: conversation.id,
+    title: conversation.title || conversation.travelPlan?.brief?.destination || t("conversations.welcome_prompt"),
+    subtitle: formatTravelSummary(conversation.travelPlan),
+    preview: selectedMessage ? getMessageText(selectedMessage.parts) : "",
+    updatedAt: new Date(conversation.updateAt).toISOString(),
+  };
+}
+
+function toHistoryTripSummary(conversation: ConversationDto): ZhituShellHistoryTrip | null {
+  const plan = conversation.travelPlan;
+  if (!plan) return null;
+
+  return {
+    id: `${conversation.id}-trip`,
+    conversationId: conversation.id,
+    title: conversation.title || plan.brief?.destination || "旅行行程",
+    destination: plan.brief?.destination,
+    dateRange: plan.brief?.dateRange,
+    days: plan.brief?.days ?? plan.itineraryDays.length,
+    summary: formatTravelSummary(plan),
+    updatedAt: new Date(conversation.updateAt).toISOString(),
+    status: conversation.travelPlanningState ?? plan.status,
+  };
+}
+
+function buildFavoriteItems(plan: TravelPlanDto | null | undefined): ZhituShellFavoriteItem[] {
+  if (!plan) return [];
+
+  const pickItems = (
+    category: string,
+    items: TravelRecommendationItemDto[],
+    maxCount: number,
+  ): ZhituShellFavoriteItem[] =>
+    items.slice(0, maxCount).map((item) => ({
+      id: `${category}-${item.id}`,
+      title: item.title,
+      subtitle: item.subtitle || item.area || item.priceHint || item.ratingText,
+      category,
+      reason: item.reason,
+      conversationId: plan.conversationId,
+      nodeId: null,
+    }));
+
+  return [
+    ...pickItems("hotel", plan.hotels, 2),
+    ...pickItems("food", plan.foods, 2),
+    ...pickItems("activity", plan.activities, 2),
+  ];
+}
+
+function buildCurrentTripSummary(
+  activeId: string | null,
+  detail: ConversationDto | null,
+): ZhituShellCurrentTripSummary | null {
+  const plan = detail?.travelPlan;
+  if (!plan) return null;
+
+  return {
+    conversationId: activeId,
+    title: detail?.title || plan.brief?.destination || "当前行程",
+    destination: plan.brief?.destination,
+    summary: formatTravelSummary(plan),
+    days: plan.brief?.days ?? plan.itineraryDays.length,
+    dateRange: plan.brief?.dateRange,
+    status: detail?.travelPlanningState ?? plan.status,
+  };
+}
 
 interface EditDraft {
   text: string;
@@ -705,6 +959,10 @@ function ConversationsPageInner() {
 
   const [homeDraftId, setHomeDraftId] = React.useState(() => createHomeDraftId());
   const [editingSession, setEditingSession] = React.useState<EditingSession | null>(null);
+  const [legacyPanelOpen, setLegacyPanelOpen] = React.useState(false);
+  const [shellTab, setShellTab] = React.useState<ZhituShellTab>(
+    routeId ? "ai" : "home",
+  );
 
   const { detail, detailLoading, detailError, selectedNodeMessages, resetDetail } =
     useConversationDetail(activeId, updateConversationSummary);
@@ -743,6 +1001,17 @@ function ConversationsPageInner() {
   const showSuggestions =
     Boolean(activeId) && !detailLoading && !detailError && chatSuggestions.length > 0;
   const displaySuggestions = showSuggestions ? chatSuggestions : EMPTY_SUGGESTIONS;
+
+  React.useEffect(() => {
+    if (isNewChat) {
+      setShellTab("home");
+      return;
+    }
+
+    if (detail?.isGenerating) {
+      setShellTab("ai");
+    }
+  }, [detail?.isGenerating, isNewChat]);
 
   const handleSelect = React.useCallback(
     (id: string) => {
@@ -956,7 +1225,342 @@ function ConversationsPageInner() {
     await api.post<{ status: string }>(`conversations/${activeId}/stop`);
   }, [activeId]);
 
+  const sendShellPrompt = React.useCallback(
+    async (text: string) => {
+      const nextText = text.trim();
+      if (!nextText) return;
+
+      if (editingSession) {
+        setEditingSession(null);
+      }
+
+      handleInputTextChange(nextText);
+      await handleSend();
+      setShellTab("ai");
+    },
+    [editingSession, handleInputTextChange, handleSend],
+  );
+
+  const shellMessages = React.useMemo(() => {
+    return selectedNodeMessages.map(({ message }) => toZhituShellMessage(message));
+  }, [selectedNodeMessages]);
   const hasWorkbenchPanel = Boolean(panel);
+  const [profileTab, setProfileTab] = React.useState<"history" | "favorites">("history");
+  const [historyConversationDetails, setHistoryConversationDetails] = React.useState<
+    Record<string, ConversationDto>
+  >({});
+
+  const historyConversationIds = React.useMemo(
+    () => conversations.slice(0, 6).map((item) => item.id),
+    [conversations],
+  );
+
+  React.useEffect(() => {
+    if (historyConversationIds.length === 0) {
+      setHistoryConversationDetails({});
+      return;
+    }
+
+    let active = true;
+
+    void Promise.all(
+      historyConversationIds.map(async (conversationId) => {
+        if (conversationId === activeId && detail) {
+          return [conversationId, detail] as const;
+        }
+
+        try {
+          const fullConversation = await api.get<ConversationDto>(`conversations/${conversationId}`);
+          return [conversationId, fullConversation] as const;
+        } catch {
+          return null;
+        }
+      }),
+    ).then((results) => {
+      if (!active) return;
+
+      setHistoryConversationDetails((previous) => {
+        const next: Record<string, ConversationDto> = {};
+        for (const entry of results) {
+          if (!entry) continue;
+          next[entry[0]] = entry[1];
+        }
+        return Object.keys(next).length > 0 ? { ...previous, ...next } : previous;
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [activeId, detail, historyConversationIds]);
+
+  const shellTravelPlan = React.useMemo(
+    () => toZhituTravelPlan(detail?.travelPlan ?? null),
+    [detail?.travelPlan],
+  );
+  const shellCurrentTripSummary = React.useMemo(
+    () => buildCurrentTripSummary(activeId, detail ?? null),
+    [activeId, detail],
+  );
+  const shellFavoriteItems = React.useMemo(
+    () => buildFavoriteItems(detail?.travelPlan),
+    [detail?.travelPlan],
+  );
+  const shellHistoryConversations = React.useMemo<ZhituShellHistoryConversation[]>(
+    () =>
+      conversations
+        .slice(0, 6)
+        .map((item) => {
+          const fullConversation = historyConversationDetails[item.id];
+          if (fullConversation) {
+            return toHistoryConversationSummary(fullConversation, t);
+          }
+
+          return {
+            id: item.id,
+            title: item.title || t("conversations.welcome_prompt"),
+            subtitle: "",
+            preview: "",
+            updatedAt: new Date(item.updateAt).toISOString(),
+          };
+        }),
+    [conversations, historyConversationDetails, t],
+  );
+  const shellHistoryTrips = React.useMemo<ZhituShellHistoryTrip[]>(
+    () =>
+      historyConversationIds
+        .map((conversationId) => toHistoryTripSummary(historyConversationDetails[conversationId]))
+        .filter((item): item is ZhituShellHistoryTrip => item !== null),
+    [historyConversationDetails, historyConversationIds],
+  );
+
+  const shellState = React.useMemo<ZhituShellStatePayload>(
+    () => ({
+      version: 1,
+      context: "web",
+      currentTab: shellTab,
+      conversation: {
+        id: activeId,
+        title: activeConversation?.title ?? (isNewChat ? t("conversations.welcome_prompt") : ""),
+        isGenerating: detail?.isGenerating ?? false,
+        suggestions: displaySuggestions,
+        messages: shellMessages,
+      },
+      travelPlan: shellTravelPlan,
+      travelUiState: {
+        searchQuery: inputText,
+        weatherSummary: "",
+        selectedMapFilter: "activity",
+        selectedDestination: null,
+        suggestions: [],
+      },
+      user: {
+        name:
+          settings?.displaySetting.userNickname?.trim() || t("conversations.user.default_name"),
+        subtitle: currentAssistant?.name ?? currentModel?.displayName ?? "",
+        stats: [
+          { label: "历史记录", value: String(conversations.length) },
+          {
+            label: "收藏推荐",
+            value: String(shellFavoriteItems.length),
+          },
+          {
+            label: "历史行程",
+            value: String(shellHistoryTrips.length || (shellCurrentTripSummary ? 1 : 0)),
+          },
+        ],
+      },
+      historyConversations: shellHistoryConversations,
+      historyTrips: shellHistoryTrips,
+      favoriteItems: shellFavoriteItems,
+      currentTripSummary: shellCurrentTripSummary,
+      profileUiState: { activeTab: profileTab },
+      availableActions: {
+        sendMessage: true,
+        generatePlan: true,
+        openMap: true,
+        openRecommendations: true,
+        openLegacyPanel: true,
+        exportConversation: Boolean(detail && detail.messages.length > 0),
+      },
+      navigationTargets: {
+        legacyPanel: true,
+        conversationList: true,
+        workbench: hasWorkbenchPanel,
+      },
+    }),
+    [
+      activeConversation?.title,
+      activeId,
+      conversations,
+      currentAssistant?.name,
+      currentModel?.displayName,
+      detail,
+      displaySuggestions,
+      hasWorkbenchPanel,
+      inputText,
+      isNewChat,
+      profileTab,
+      shellCurrentTripSummary,
+      shellFavoriteItems,
+      shellHistoryConversations,
+      shellHistoryTrips,
+      shellTravelPlan,
+      settings,
+      shellMessages,
+      shellTab,
+      t,
+    ],
+  );
+
+  const exportConversation = React.useMemo(
+    () =>
+      detail && detail.messages.length > 0
+        ? (includeReasoning: boolean) => {
+            const content = convertConversationToMarkdown(detail, includeReasoning);
+            const filename = `${detail.title || "conversation"}.md`;
+            downloadMarkdown(content, filename);
+          }
+        : undefined,
+    [detail],
+  );
+
+  const handleShellAction = React.useCallback(
+    async ({ action, payload }: ZhituShellActionPayload) => {
+      switch (action) {
+        case "open_profile": {
+          setProfileTab("history");
+          return;
+        }
+        case "close_profile": {
+          return;
+        }
+        case "switch_profile_tab": {
+          const nextTab = payload?.tab === "favorites" ? "favorites" : "history";
+          setProfileTab(nextTab);
+          return;
+        }
+        case "send_message": {
+          const text = typeof payload?.text === "string" ? payload.text : "";
+          await sendShellPrompt(text);
+          return;
+        }
+        case "switch_tab": {
+          const tab = typeof payload?.tab === "string" ? payload.tab : null;
+          setShellTab(normalizeShellTab(tab));
+          return;
+        }
+        case "select_destination": {
+          const name = typeof payload?.name === "string" ? payload.name : "";
+          await sendShellPrompt(
+            name.trim().length > 0
+              ? `Please plan a trip to ${name.trim()} with itinerary, hotels, food, activities, and map highlights.`
+              : DEFAULT_TRAVEL_PLAN_PROMPT,
+          );
+          return;
+        }
+        case "generate_plan": {
+          const prompt =
+            typeof payload?.prompt === "string" && payload.prompt.trim().length > 0
+              ? payload.prompt.trim()
+              : DEFAULT_TRAVEL_PLAN_PROMPT;
+          await sendShellPrompt(prompt);
+          setShellTab("itinerary");
+          return;
+        }
+        case "open_map": {
+          setShellTab("map");
+          return;
+        }
+        case "open_recommendation": {
+          const category = typeof payload?.category === "string" ? payload.category : "activity";
+          setShellTab(normalizeShellTab(category));
+          return;
+        }
+        case "open_favorite_item": {
+          const conversationId =
+            typeof payload?.conversationId === "string" ? payload.conversationId : activeId;
+          const category = typeof payload?.category === "string" ? payload.category : "activity";
+          if (conversationId) {
+            setActiveId(conversationId);
+            navigate(`/c/${conversationId}`);
+          }
+          setShellTab(normalizeShellTab(category));
+          return;
+        }
+        case "open_itinerary": {
+          setShellTab("itinerary");
+          return;
+        }
+        case "resume_history_session": {
+          const conversationId = typeof payload?.conversationId === "string" ? payload.conversationId : null;
+          if (!conversationId) return;
+          setActiveId(conversationId);
+          navigate(`/c/${conversationId}`);
+          setShellTab("ai");
+          return;
+        }
+        case "view_trip": {
+          const conversationId = typeof payload?.conversationId === "string" ? payload.conversationId : activeId;
+          if (conversationId) {
+            setActiveId(conversationId);
+            navigate(`/c/${conversationId}`);
+          }
+          setShellTab("itinerary");
+          return;
+        }
+        case "replan_trip": {
+          const conversationId = typeof payload?.conversationId === "string" ? payload.conversationId : activeId;
+          if (conversationId && conversationId !== activeId) {
+            setActiveId(conversationId);
+            navigate(`/c/${conversationId}`);
+            setShellTab("ai");
+            return;
+          }
+          setShellTab("ai");
+          await sendShellPrompt("请基于当前旅行偏好重新规划行程，并优化住宿、美食、活动和地图亮点。");
+          return;
+        }
+        case "export_itinerary": {
+          if (exportConversation) {
+            exportConversation(false);
+          }
+          return;
+        }
+        case "share_itinerary": {
+          if (!detail) return;
+          const content = convertConversationToMarkdown(detail, false);
+          if (navigator.share) {
+            await navigator.share({
+              title: detail.title || "旅行行程",
+              text: content,
+            });
+          } else {
+            downloadMarkdown(content, `${detail.title || "conversation"}.md`);
+          }
+          return;
+        }
+        case "open_detail_page": {
+          setLegacyPanelOpen(true);
+          return;
+        }
+        case "open_history": {
+          setProfileTab("history");
+          setLegacyPanelOpen(true);
+          return;
+        }
+        case "open_settings_or_more":
+        case "open_advanced_chat_controls": {
+          setLegacyPanelOpen(true);
+          return;
+        }
+        default:
+          return;
+      }
+    },
+    [activeId, detail, exportConversation, navigate, sendShellPrompt, setActiveId],
+  );
+
   const workbenchPanelRef = React.useRef<PanelImperativeHandle | null>(null);
 
   React.useEffect(() => {
@@ -972,12 +1576,10 @@ function ConversationsPageInner() {
     }
   }, [hasWorkbenchPanel, isMobile]);
 
-  const chatContent = (
-    <div
-      className={cn("flex flex-1 flex-col min-h-0 overflow-hidden", isNewChat && "justify-center")}
-    >
-      {!isNewChat && (
-        <div className="relative flex min-h-0 flex-1">
+  const legacyPanelContent = (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {!isNewChat ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationTimeline
             activeId={activeId}
             isHomeRoute={isHomeRoute}
@@ -987,6 +1589,7 @@ function ConversationsPageInner() {
             isGenerating={detail?.isGenerating ?? false}
             settings={settings}
             conversationAssistantId={detail?.assistantId ?? null}
+            contentClassName="max-w-none px-4 py-4"
             onEdit={handleStartEdit}
             onDelete={handleDeleteMessage}
             onFork={handleForkMessage}
@@ -995,19 +1598,20 @@ function ConversationsPageInner() {
             onToolApproval={handleToolApproval}
           />
         </div>
-      )}
-
-      <div>
-        {isNewChat && (
-          <div className="mb-4 text-center">
+      ) : (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center">
+          <div>
             <div className="mb-3 flex justify-center">
-              <div className="[&>svg]:size-16">
-                <Logo className="size-16 text-primary"/>
+              <div className="[&>svg]:size-14">
+                <Logo className="size-14 text-primary" />
               </div>
             </div>
-            <p className="text-lg text-muted-foreground">{t("conversations.welcome_prompt")}</p>
+            <p className="text-sm text-muted-foreground">{t("conversations.welcome_prompt")}</p>
           </div>
-        )}
+        </div>
+      )}
+
+      <div className="border-t p-4">
         <ChatInput
           value={inputText}
           attachments={inputAttachments}
@@ -1024,17 +1628,34 @@ function ConversationsPageInner() {
           onRemovePart={handleRemoveInputPart}
           onSend={handleSend}
           onStop={activeId ? handleStop : undefined}
-          onExportConversation={
-            detail && detail.messages.length > 0
-              ? (includeReasoning: boolean) => {
-                  const content = convertConversationToMarkdown(detail, includeReasoning);
-                  const filename = `${detail.title || "conversation"}.md`;
-                  downloadMarkdown(content, filename);
-                }
-              : undefined
-          }
+          onExportConversation={exportConversation}
         />
       </div>
+    </div>
+  );
+
+  const chatContent = (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="min-h-0 flex-1 overflow-hidden bg-background">
+        <ZhituShellFrame html={zhituHtml} state={shellState} onAction={handleShellAction} />
+      </div>
+
+      <Sheet open={legacyPanelOpen} onOpenChange={setLegacyPanelOpen}>
+        <SheetContent
+          side={isMobile ? "bottom" : "right"}
+          className={cn(
+            "flex min-h-0 flex-col gap-0 p-0",
+            isMobile ? "h-[85vh] w-full max-w-none" : "h-full w-[min(720px,92vw)] sm:max-w-none",
+          )}
+        >
+          <SheetHeader className="border-b">
+            <SheetTitle>Legacy controls</SheetTitle>
+            <SheetDescription>
+              淇濈暀鍘熸湁浼氳瘽銆侀珮绾ц緭鍏ャ€佸鍑轰笌娑堟伅鎿嶄綔鑳藉姏銆?            </SheetDescription>
+          </SheetHeader>
+          {legacyPanelContent}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 
@@ -1079,6 +1700,16 @@ function ConversationsPageInner() {
               </div>
             ) : null}
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setLegacyPanelOpen(true);
+            }}
+          >
+            鏇村
+          </Button>
         </div>
 
         {!isMobile ? (

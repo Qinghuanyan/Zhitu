@@ -2,10 +2,13 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
@@ -18,11 +21,15 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.core.merge
 import me.rerere.ai.provider.CustomBody
 import me.rerere.ai.provider.Model
+import me.rerere.ai.provider.ModelAbility
+import me.rerere.ai.provider.ModelType
+import me.rerere.ai.provider.Modality
 import me.rerere.ai.provider.Provider
 import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
+import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
@@ -47,6 +54,7 @@ import java.util.Locale
 import kotlin.time.Clock
 
 private const val TAG = "GenerationHandler"
+private const val PER_MODEL_GENERATION_TIMEOUT_MS = 180_000L
 
 @Serializable
 sealed interface GenerationChunk {
@@ -54,6 +62,12 @@ sealed interface GenerationChunk {
         val messages: List<UIMessage>
     ) : GenerationChunk
 }
+
+data class GenerationFallbackNotice(
+    val fromModel: Model,
+    val toModel: Model,
+    val cause: Throwable,
+)
 
 class GenerationHandler(
     private val context: Context,
@@ -63,6 +77,147 @@ class GenerationHandler(
     private val conversationRepo: ConversationRepository,
     private val aiLoggingManager: AILoggingManager,
 ) {
+    private data class GenerationTarget(
+        val model: Model,
+        val provider: ProviderSetting,
+        val providerImpl: Provider<ProviderSetting>,
+    )
+
+    private fun isCompatibleGenerationTarget(
+        model: Model,
+        tools: List<Tool>,
+    ): Boolean {
+        if (model.type != ModelType.CHAT) return false
+        if (Modality.TEXT !in model.inputModalities) return false
+        if (Modality.TEXT !in model.outputModalities) return false
+        if (tools.isNotEmpty() && ModelAbility.TOOL !in model.abilities) return false
+        return true
+    }
+
+    private fun generationTargetScore(
+        target: GenerationTarget,
+        baseModel: Model,
+        baseProviderId: String?,
+        tools: List<Tool>,
+    ): Int {
+        var score = 0
+        if (target.model.id == baseModel.id) score += 100
+        if (baseProviderId != null && target.provider.id.toString() == baseProviderId) score += 20
+        if (target.model.abilities.containsAll(baseModel.abilities)) score += 10
+        if (tools.isEmpty() || ModelAbility.TOOL in target.model.abilities) score += 5
+        if (target.model.outputModalities.contains(Modality.TEXT)) score += 3
+        return score
+    }
+
+    private fun resolveGenerationTargets(
+        settings: Settings,
+        baseModel: Model,
+        tools: List<Tool>,
+    ): List<GenerationTarget> {
+        val baseProvider = baseModel.findProvider(settings.providers)
+        val baseProviderId = baseProvider?.id?.toString()
+        val primary = baseProvider?.let {
+            GenerationTarget(
+                model = baseModel,
+                provider = it,
+                providerImpl = providerManager.getProviderByType(it),
+            )
+        }
+
+        val candidates = settings.providers.flatMap { provider ->
+            provider.models.mapNotNull { candidateModel ->
+                if (candidateModel.id == baseModel.id) return@mapNotNull null
+                if (!isCompatibleGenerationTarget(candidateModel, tools)) return@mapNotNull null
+                val candidateProvider = candidateModel.findProvider(settings.providers) ?: provider
+                GenerationTarget(
+                    model = candidateModel,
+                    provider = candidateProvider,
+                    providerImpl = providerManager.getProviderByType(candidateProvider),
+                )
+            }
+        }.distinctBy { it.model.id }
+            .sortedByDescending { generationTargetScore(it, baseModel, baseProviderId, tools) }
+
+        return buildList {
+            primary?.let { add(it) }
+            addAll(candidates)
+        }
+    }
+
+    private suspend fun generateInternalWithFallback(
+        assistant: Assistant,
+        settings: Settings,
+        messages: List<UIMessage>,
+        onUpdateMessages: suspend (List<UIMessage>) -> Unit,
+        onTargetChanged: (Model) -> Unit,
+        onFallback: ((GenerationFallbackNotice) -> Unit)? = null,
+        transformers: List<MessageTransformer>,
+        model: Model,
+        tools: List<Tool>,
+        memories: List<AssistantMemory>,
+        stream: Boolean
+    ): Model {
+        val baseMessages = messages
+        val targets = resolveGenerationTargets(settings, model, tools)
+        var lastError: Throwable? = null
+
+        for ((index, target) in targets.withIndex()) {
+            try {
+                if (index > 0) {
+                    Log.w(
+                        TAG,
+                        "generateInternalWithFallback: fallback ${model.modelId} -> ${target.model.modelId}"
+                    )
+                }
+                onTargetChanged(target.model)
+                withTimeout(PER_MODEL_GENERATION_TIMEOUT_MS) {
+                    generateInternal(
+                        assistant = assistant,
+                        settings = settings,
+                        messages = messages,
+                        onUpdateMessages = onUpdateMessages,
+                        transformers = transformers,
+                        model = target.model,
+                        providerImpl = target.providerImpl,
+                        provider = target.provider,
+                        tools = tools,
+                        memories = memories,
+                        stream = stream,
+                    )
+                }
+                return target.model
+            } catch (error: Throwable) {
+                if (error is TimeoutCancellationException) {
+                    Log.w(
+                        TAG,
+                        "generateInternalWithFallback: timeout on ${target.model.modelId} / ${target.provider.name}",
+                        error
+                    )
+                } else if (error is CancellationException) {
+                    throw error
+                }
+                lastError = error
+                Log.w(
+                    TAG,
+                    "generateInternalWithFallback: failed on ${target.model.modelId} / ${target.provider.name}",
+                    error
+                )
+                targets.getOrNull(index + 1)?.let { nextTarget ->
+                    onFallback?.invoke(
+                        GenerationFallbackNotice(
+                            fromModel = target.model,
+                            toModel = nextTarget.model,
+                            cause = error,
+                        )
+                    )
+                }
+                onUpdateMessages(baseMessages)
+            }
+        }
+
+        throw lastError ?: IllegalStateException("No available model target")
+    }
+
     fun generateText(
         settings: Settings,
         model: Model,
@@ -72,15 +227,14 @@ class GenerationHandler(
         assistant: Assistant,
         memories: List<AssistantMemory>? = null,
         tools: List<Tool> = emptyList(),
+        onFallback: ((GenerationFallbackNotice) -> Unit)? = null,
         maxSteps: Int = 256,
     ): Flow<GenerationChunk> = flow {
-        val provider = model.findProvider(settings.providers) ?: error("Provider not found")
-        val providerImpl = providerManager.getProviderByType(provider)
-
+        var activeModel = model
         var messages: List<UIMessage> = messages
 
         for (stepIndex in 0 until maxSteps) {
-            Log.i(TAG, "streamText: start step #$stepIndex (${model.id})")
+            Log.i(TAG, "streamText: start step #$stepIndex (${activeModel.id})")
 
             val toolsInternal = buildList {
                 Log.i(TAG, "generateInternal: build tools($assistant)")
@@ -115,7 +269,7 @@ class GenerationHandler(
 
             // Skip generation if we have approved/denied tool calls to handle
             if (pendingTools.isEmpty()) {
-                generateInternal(
+                activeModel = generateInternalWithFallback(
                     assistant = assistant,
                     settings = settings,
                     messages = messages,
@@ -123,7 +277,7 @@ class GenerationHandler(
                         messages = it.transforms(
                             transformers = outputTransformers,
                             context = context,
-                            model = model,
+                            model = activeModel,
                             assistant = assistant,
                             settings = settings
                         )
@@ -132,17 +286,17 @@ class GenerationHandler(
                                 messages.visualTransforms(
                                     transformers = outputTransformers,
                                     context = context,
-                                    model = model,
+                                    model = activeModel,
                                     assistant = assistant,
                                     settings = settings
                                 )
                             )
                         )
                     },
+                    onTargetChanged = { activeModel = it },
+                    onFallback = onFallback,
                     transformers = inputTransformers,
-                    model = model,
-                    providerImpl = providerImpl,
-                    provider = provider,
+                    model = activeModel,
                     tools = toolsInternal,
                     memories = memories ?: emptyList(),
                     stream = assistant.streamOutput
@@ -150,14 +304,14 @@ class GenerationHandler(
                 messages = messages.visualTransforms(
                     transformers = outputTransformers,
                     context = context,
-                    model = model,
+                    model = activeModel,
                     assistant = assistant,
                     settings = settings
                 )
                 messages = messages.onGenerationFinish(
                     transformers = outputTransformers,
                     context = context,
-                    model = model,
+                    model = activeModel,
                     assistant = assistant,
                     settings = settings
                 )
@@ -305,20 +459,77 @@ class GenerationHandler(
                 } else part
             }
             messages = messages.dropLast(1) + lastMessage.copy(parts = updatedParts)
-            emit(
-                GenerationChunk.Messages(
-                    messages.transforms(
-                        transformers = outputTransformers,
-                        context = context,
-                        model = model,
-                        assistant = assistant,
-                        settings = settings
+                emit(
+                    GenerationChunk.Messages(
+                        messages.transforms(
+                            transformers = outputTransformers,
+                            context = context,
+                            model = activeModel,
+                            assistant = assistant,
+                            settings = settings
+                        )
                     )
                 )
-            )
         }
 
     }.flowOn(Dispatchers.IO)
+
+    suspend fun generateSingleTextWithFallback(
+        settings: Settings,
+        model: Model,
+        messages: List<UIMessage>,
+        paramsBuilder: (Model) -> TextGenerationParams,
+        tools: List<Tool> = emptyList(),
+        onFallback: ((GenerationFallbackNotice) -> Unit)? = null,
+    ): MessageChunk {
+        val targets = resolveGenerationTargets(settings, model, tools)
+        var lastError: Throwable? = null
+
+        for ((index, target) in targets.withIndex()) {
+            try {
+                if (index > 0) {
+                    Log.w(
+                        TAG,
+                        "generateSingleTextWithFallback: fallback ${model.modelId} -> ${target.model.modelId}"
+                    )
+                }
+                return withTimeout(PER_MODEL_GENERATION_TIMEOUT_MS) {
+                    target.providerImpl.generateText(
+                        providerSetting = target.provider,
+                        messages = messages,
+                        params = paramsBuilder(target.model),
+                    )
+                }
+            } catch (error: Throwable) {
+                if (error is TimeoutCancellationException) {
+                    Log.w(
+                        TAG,
+                        "generateSingleTextWithFallback: timeout on ${target.model.modelId} / ${target.provider.name}",
+                        error
+                    )
+                } else if (error is CancellationException) {
+                    throw error
+                }
+                lastError = error
+                Log.w(
+                    TAG,
+                    "generateSingleTextWithFallback: failed on ${target.model.modelId} / ${target.provider.name}",
+                    error
+                )
+                targets.getOrNull(index + 1)?.let { nextTarget ->
+                    onFallback?.invoke(
+                        GenerationFallbackNotice(
+                            fromModel = target.model,
+                            toModel = nextTarget.model,
+                            cause = error,
+                        )
+                    )
+                }
+            }
+        }
+
+        throw lastError ?: IllegalStateException("No available model target")
+    }
 
     private suspend fun generateInternal(
         assistant: Assistant,

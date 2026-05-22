@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "scope": "project-local",
+  "last_updated": "2026-05-30",
+  "categories": {
+    "WORKFLOW": [],
+    "DEBUGGING": [],
+    "UI_UX": [],
+    "SECURITY": [],
+    "CTF": [],
+    "TOOLING": [],
+    "ENVIRONMENT": [],
+    "PERFORMANCE": [],
+    "DOCUMENTATION": []
+  }
+}

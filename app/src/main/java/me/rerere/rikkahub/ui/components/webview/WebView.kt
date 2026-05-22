@@ -81,6 +81,7 @@ fun WebView(
         AndroidView(
             factory = { context ->
                 WebView(context).apply {
+                    WebView.setWebContentsDebuggingEnabled(false)
                     layoutParams = LayoutParams(
                         LayoutParams.MATCH_PARENT,
                         LayoutParams.MATCH_PARENT

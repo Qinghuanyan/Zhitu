@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.ai.AILogging
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -39,7 +40,10 @@ fun DeveloperPage(vm: DeveloperVM = koinViewModel()) {
                         text = "Developer Page",
                         maxLines = 1,
                     )
-                }
+                },
+                navigationIcon = {
+                    BackButton()
+                },
             )
         },
         bottomBar = {

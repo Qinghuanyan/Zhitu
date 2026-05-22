@@ -28,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.utils.base64Encode
 import me.rerere.rikkahub.utils.navigateToChatPage
@@ -46,7 +47,10 @@ fun ShareHandlerPage(text: String, image: String?) {
             TopAppBar(
                 title = {
                     Text(stringResource(R.string.share_handler_page_title))
-                }
+                },
+                navigationIcon = {
+                    BackButton()
+                },
             )
         }
     ) {

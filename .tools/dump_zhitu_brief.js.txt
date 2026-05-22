@@ -1,0 +1,8 @@
+JSON.stringify((function () {
+  const state = window.__ZHITU_STATE__ || {};
+  const brief = state.travelPlan && state.travelPlan.brief;
+  return {
+    status: state.travelPlan && state.travelPlan.status,
+    brief: brief,
+  };
+})())

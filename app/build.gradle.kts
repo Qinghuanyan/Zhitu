@@ -12,6 +12,14 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val generatedZhituAssetDir = layout.buildDirectory.dir("generated/zhitu-assets/main")
+
+val syncZhituHtmlAsset by tasks.registering(Copy::class) {
+    from(rootProject.file("../ZhituHtml/ai_travel_planner.html"))
+    into(generatedZhituAssetDir)
+    rename { "zhitu.html" }
+}
+
 val firebaseAwareVariants = mapOf(
     "debug" to "me.rerere.rikkahub.debug",
     "baseline" to "me.rerere.rikkahub.debug",
@@ -149,6 +157,7 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+            isDebuggable = false
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
@@ -172,6 +181,7 @@ android {
         buildConfig = true
     }
     sourceSets {
+        getByName("main").assets.srcDir(generatedZhituAssetDir.get().asFile)
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
     }
     androidResources {
@@ -195,6 +205,10 @@ android {
         compilerOptions.optIn.add("kotlinx.coroutines.ExperimentalCoroutinesApi")
         compilerOptions.optIn.add("androidx.navigation3.runtime.ExperimentalNavigation3Api")
     }
+}
+
+tasks.named("preBuild") {
+    dependsOn(syncZhituHtmlAsset)
 }
 
 composeCompiler {
