@@ -110,7 +110,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingTTSPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
-import me.rerere.rikkahub.ui.pages.travel.TravelHubPage
+import me.rerere.rikkahub.ui.pages.travel.TravelHubHtmlPage
 import me.rerere.rikkahub.ui.pages.travel.TravelRecommendationPage
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
 import me.rerere.rikkahub.ui.pages.webview.WebViewPage
@@ -387,15 +387,14 @@ class RouteActivity : ComponentActivity() {
                             }
 
                             entry<Screen.ChatMap> { key ->
-                                TravelHubPage(
-                                    id = Uuid.parse(key.id),
-                                    nodeId = key.nodeId?.let(Uuid::parse),
-                                    startTab = "map",
+                                ChatMapPage(
+                                    chatId = Uuid.parse(key.id),
+                                    highlightPoiId = key.nodeId,
                                 )
                             }
 
                             entry<Screen.TravelHub> { key ->
-                                TravelHubPage(
+                                TravelHubHtmlPage(
                                     id = Uuid.parse(key.id),
                                     text = key.text,
                                     files = key.files.map { it.toUri() },

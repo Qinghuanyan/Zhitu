@@ -1,0 +1,10 @@
+(function () {
+  const btn = document.querySelector('[data-zhitu-local="open-itinerary-overlay"]');
+  if (!btn) return "missing-open-itinerary-overlay";
+  btn.click();
+  const overlay = document.getElementById("itinerary-full-overlay");
+  return JSON.stringify({
+    overlayHidden: overlay ? overlay.classList.contains("hidden") : null,
+    text: (overlay && overlay.innerText || "").slice(0, 2000),
+  });
+})()

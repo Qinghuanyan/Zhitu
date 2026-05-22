@@ -1,0 +1,1717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="filename" content="ai_travel_planner.html">
+    <title></title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        window.tailwind = window.tailwind || {};
+        window.tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'brand-light': '#F0FDF4',
+                        'brand-green': '#10B981',
+                        'brand-cyan': '#06B6D4',
+                        'brand-purple': '#A855F7',
+                        'dark-bg': '#0F172A',
+                    },
+                    boxShadow: {
+                        'neon-green': '0 0 12px rgba(16, 185, 129, 0.6)',
+                        'neon-cyan': '0 0 12px rgba(6, 182, 212, 0.6)',
+                        'neon-purple': '0 0 12px rgba(168, 85, 247, 0.5)',
+                        'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.05)',
+                    },
+                    backgroundImage: {
+                        'origami-gradient': 'linear-gradient(135deg, #10B981 0%, #06B6D4 50%, #A855F7 100%)',
+                        'card-gradient': 'linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(240,253,244,0.6) 100%)',
+                    },
+                    animation: {
+                        'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'slide-up': 'slideUp 0.3s ease-out forwards',
+                        'slide-in-bottom': 'slideInBottom 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'fade-in': 'fadeIn 0.3s ease-out forwards',
+                        'shimmer': 'shimmer 1.5s infinite',
+                    },
+                    keyframes: {
+                        pulseGlow: {
+                            '0%, 100%': { boxShadow: '0 0 10px rgba(16,185,129,0.4)', borderColor: 'rgba(16,185,129,0.4)' },
+                            '50%': { boxShadow: '0 0 20px rgba(16,185,129,0.8)', borderColor: 'rgba(16,185,129,0.8)' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        slideInBottom: {
+                            '0%': { opacity: '0', transform: 'translateY(100%)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        shimmer: {
+                            '0%': { backgroundPosition: '-200% 0' },
+                            '100%': { backgroundPosition: '200% 0' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100dvh;
+            overflow: hidden;
+            background-color: #FAFAFA;
+            display: block;
+            font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+
+        /* Force 375x812 container */
+        #app-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100dvh;
+            max-width: 100vw;
+            max-height: 100dvh;
+            background-color: #FAFAFA;
+            overflow: hidden;
+            border-radius: 0;
+            box-shadow: none;
+            border: none;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Hide scrollbar but allow scroll */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid rgba(255, 255, 255, 0.8);
+        }
+
+        .chat-bubble-ai {
+            background: linear-gradient(135deg, #ffffff 0%, #F0FDF4 100%);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.05);
+            border-radius: 20px 20px 20px 4px;
+        }
+
+        .chat-bubble-user {
+            background: linear-gradient(135deg, #10B981 0%, #06B6D4 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.2);
+            border-radius: 20px 20px 4px 20px;
+        }
+
+        /* Quick tab active state */
+        .quick-tab.active {
+            background: linear-gradient(135deg, #10B981 0%, #06B6D4 50%, #A855F7 100%);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.45);
+        }
+
+        /* Skeleton shimmer */
+        .skeleton-block {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 8px;
+        }
+
+        /* Horizontal scroll snapping */
+        .snap-scroll {
+            scroll-snap-type: x mandatory;
+        }
+        .snap-scroll > * {
+            scroll-snap-align: start;
+        }
+
+        /* Bottom sheet overlay */
+        #map-fullscreen, #hotel-sheet-overlay, #itinerary-full-overlay, #preference-overlay, #profile-overlay {
+            transition: opacity 0.3s ease;
+        }
+
+        /* Preference chip */
+        .pref-chip {
+            transition: all 0.2s ease;
+            border: 1.5px solid #e5e7eb;
+        }
+        .pref-chip.active {
+            background: linear-gradient(135deg, #10B981, #06B6D4, #A855F7);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 4px 12px rgba(16,185,129,0.3);
+        }
+
+        /* Weather day card selected state */
+        .weather-day-card.selected {
+            background: rgba(255,255,255,0.25);
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.4);
+        }
+
+        /* Food filter chip active */
+        .food-chip.active {
+            background: linear-gradient(135deg, #10B981, #06B6D4);
+            color: white;
+            border-color: transparent;
+        }
+
+        /* Progress ring */
+        .progress-ring-circle {
+            transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        /* Packing checkbox */
+        .pack-item.checked .pack-label {
+            text-decoration: line-through;
+            color: #9ca3af;
+        }
+        .pack-item.checked {
+            opacity: 0.6;
+        }
+
+        /* Swipe carousel */
+        .carousel-inner {
+            transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        /* Map spot bubble */
+        .spot-bubble {
+            animation: fadeIn 0.2s ease-out forwards;
+        }
+
+        /* Activity progress bar */
+        .activity-bar-fill {
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Profile overlay transition */
+        #profile-overlay {
+            transition: opacity 0.3s ease;
+        }
+
+        /* Profile tab active state */
+        .profile-tab.active {
+            background: linear-gradient(135deg, #10B981 0%, #06B6D4 50%, #A855F7 100%);
+            color: white;
+            border-color: transparent;
+            box-shadow: 0 4px 12px rgba(16,185,129,0.3);
+        }
+
+        /* Profile history session card left accent bar */
+        .history-session-card {
+            border-left: 3px solid transparent;
+            border-image: linear-gradient(to bottom, #10B981, #06B6D4, #A855F7) 1;
+        }
+
+        /* Favorite item removed visual state */
+        .fav-item.removed {
+            opacity: 0.35;
+            filter: grayscale(0.8);
+        }
+
+        /* User avatar gradient border (no pulse) */
+        #user-avatar-btn {
+            background: linear-gradient(135deg, #10B981 0%, #06B6D4 50%, #A855F7 100%);
+        }
+
+        .markdown-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+            word-break: break-word;
+        }
+
+        .markdown-body > * {
+            margin: 0;
+        }
+
+        .markdown-body h1,
+        .markdown-body h2,
+        .markdown-body h3,
+        .markdown-body h4,
+        .markdown-body h5,
+        .markdown-body h6 {
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        .markdown-body h1 { font-size: 1.125rem; }
+        .markdown-body h2 { font-size: 1rem; }
+        .markdown-body h3 { font-size: 0.95rem; }
+        .markdown-body h4,
+        .markdown-body h5,
+        .markdown-body h6 { font-size: 0.9rem; }
+
+        .markdown-body p,
+        .markdown-body blockquote,
+        .markdown-body li {
+            line-height: 1.7;
+        }
+
+        .markdown-body ul,
+        .markdown-body ol {
+            margin: 0;
+            padding-left: 1.25rem;
+        }
+
+        .markdown-body li + li {
+            margin-top: 0.35rem;
+        }
+
+        .markdown-body blockquote {
+            padding-left: 0.875rem;
+            border-left: 3px solid rgba(16, 185, 129, 0.35);
+            color: #4B5563;
+        }
+
+        .markdown-body pre {
+            margin: 0;
+            padding: 0.875rem 1rem;
+            border-radius: 0.875rem;
+            background: #0F172A;
+            color: #E5E7EB;
+            font-size: 0.75rem;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+
+        .markdown-body code {
+            padding: 0.12rem 0.35rem;
+            border-radius: 0.375rem;
+            background: rgba(15, 23, 42, 0.08);
+            font-size: 0.85em;
+            font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+        }
+
+        .markdown-body pre code {
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            color: inherit;
+            font-size: inherit;
+        }
+
+        .markdown-body a {
+            color: #0F766E;
+            text-decoration: underline;
+        }
+
+        .chat-bubble-user .markdown-body blockquote {
+            color: rgba(255, 255, 255, 0.88);
+            border-left-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .chat-bubble-user .markdown-body code {
+            background: rgba(255, 255, 255, 0.18);
+        }
+
+        .chat-bubble-user .markdown-body a {
+            color: #FFFFFF;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <!-- Header / Top Bar -->
+        <header class="glass-panel px-4 py-4 flex items-center justify-between z-10 relative">
+            <div class="flex items-center gap-2.5">
+                <!-- User avatar button -->
+                <div id="user-avatar-btn" class="relative w-9 h-9 rounded-full p-[2px] cursor-pointer hover:scale-105 transition-transform flex-shrink-0" style="background:linear-gradient(135deg,#10B981,#06B6D4,#A855F7)">
+                    <div class="w-full h-full bg-white rounded-full overflow-hidden">
+                        <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover" alt="User Avatar">
+                    </div>
+                </div>
+                <div class="relative w-10 h-10 rounded-full p-[2px] bg-origami-gradient animate-pulse-glow cursor-pointer" id="ai-avatar-btn">
+                    <div class="w-full h-full bg-white rounded-full flex items-center justify-center overflow-hidden">
+                        <img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover opacity-90" alt="AI Avatar">
+                    </div>
+                </div>
+                <div>
+                    <h1 class="font-bold text-gray-800 text-sm tracking-wide">智途 TravelHub</h1>
+                    <p class="text-[10px] text-brand-green font-medium flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse"></span> 行程助手已连接</p>
+                </div>
+            </div>
+            <div id="header-map-btn" class="w-8 h-8 flex items-center justify-center rounded-lg bg-origami-gradient opacity-80 shadow-neon-cyan cursor-pointer hover:opacity-100 transition-opacity">
+                <i data-lucide="map" class="w-4 h-4 text-white pointer-events-none"></i>
+            </div>
+        </header>
+
+        <!-- Main Chat Flow Area -->
+        <main id="chat-container" class="flex-1 overflow-y-auto no-scrollbar p-5 pb-28 flex flex-col gap-5 relative z-10">
+        </main>
+        <!-- Composite Bottom Area: Quick Tabs + Input -->
+        <div class="absolute bottom-0 left-0 right-0 z-20 glass-panel border-t border-white/50">
+            <div class="overflow-x-auto no-scrollbar flex gap-2 px-4 pt-3 pb-2">
+                <button class="quick-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-200 bg-white/80 text-gray-500 transition-all duration-200 hover:border-brand-green/40 hover:text-brand-green" data-tab="itinerary">
+                    <i data-lucide="calendar" class="w-3.5 h-3.5 pointer-events-none"></i>
+                    <span>行程</span>
+                </button>
+                <button class="quick-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-200 bg-white/80 text-gray-500 transition-all duration-200 hover:border-brand-cyan/40 hover:text-brand-cyan" data-tab="hotel">
+                    <i data-lucide="building-2" class="w-3.5 h-3.5 pointer-events-none"></i>
+                    <span>住宿</span>
+                </button>
+                <button class="quick-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-200 bg-white/80 text-gray-500 transition-all duration-200 hover:border-brand-green/40 hover:text-brand-green" data-tab="food">
+                    <i data-lucide="utensils" class="w-3.5 h-3.5 pointer-events-none"></i>
+                    <span>餐饮</span>
+                </button>
+                <button class="quick-tab flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-gray-200 bg-white/80 text-gray-500 transition-all duration-200 hover:border-brand-purple/40 hover:text-brand-purple" data-tab="activity">
+                    <i data-lucide="zap" class="w-3.5 h-3.5 pointer-events-none"></i>
+                    <span>活动</span>
+                </button>
+            </div>
+            <div class="px-4 pb-4">
+                <div class="glass-panel rounded-full p-1.5 flex items-center gap-2 shadow-lg border border-white/50">
+                    <div id="mic-btn" class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 cursor-pointer hover:bg-brand-green/10 hover:text-brand-green transition-all duration-200">
+                        <i data-lucide="mic" class="w-4 h-4 pointer-events-none"></i>
+                    </div>
+                    <input type="text" id="chat-input" placeholder="输入你的目的地、日期或偏好..." class="flex-1 bg-transparent border-none outline-none text-sm text-gray-700 placeholder-gray-400 px-2">
+                    <button id="send-btn" class="w-9 h-9 rounded-full bg-brand-green flex items-center justify-center text-white shadow-neon-green hover:scale-105 transition-transform">
+                        <i data-lucide="arrow-up" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ====== MAP FULLSCREEN OVERLAY ====== -->
+        <div id="map-fullscreen" class="absolute inset-0 z-50 hidden flex-col" style="background:#0F172A;">
+            <div class="relative flex-1 overflow-hidden">
+                <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=800&auto=format&fit=crop" class="w-full h-full object-cover opacity-80">
+                <!-- Map pins overlay -->
+                <div class="absolute inset-0">
+                    <!-- Pin 1 -->
+                    <div class="absolute" style="top:28%;left:45%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-green rounded-full flex items-center justify-center shadow-neon-green cursor-pointer border-2 border-white" data-spot="0">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Pin 2 -->
+                    <div class="absolute" style="top:42%;left:62%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-cyan rounded-full flex items-center justify-center shadow-neon-cyan cursor-pointer border-2 border-white" data-spot="1">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Pin 3 -->
+                    <div class="absolute" style="top:55%;left:30%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-purple rounded-full flex items-center justify-center shadow-neon-purple cursor-pointer border-2 border-white" data-spot="2">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Pin 4 -->
+                    <div class="absolute" style="top:35%;left:72%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-green rounded-full flex items-center justify-center shadow-neon-green cursor-pointer border-2 border-white" data-spot="3">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Pin 5 -->
+                    <div class="absolute" style="top:65%;left:55%">
+                        <div class="map-pin-btn w-7 h-7 bg-brand-cyan rounded-full flex items-center justify-center shadow-neon-cyan cursor-pointer border-2 border-white" data-spot="4">
+                            <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white pointer-events-none"></i>
+                        </div>
+                    </div>
+                    <!-- Spot bubble (dynamic) -->
+                    <div id="spot-bubble" class="hidden absolute bg-white rounded-xl px-3 py-2 shadow-xl border border-white/80 min-w-[140px] z-10" style="top:15%;left:50%;transform:translateX(-50%)">
+                        <p id="spot-bubble-name" class="text-xs font-bold text-gray-800"></p>
+                        <div class="flex items-center gap-1 mt-0.5">
+                            <i data-lucide="star" class="w-3 h-3 text-yellow-400 fill-current"></i>
+                            <span id="spot-bubble-rating" class="text-[10px] text-gray-500"></span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Close button -->
+                <button id="map-fullscreen-close" class="absolute top-4 right-4 w-9 h-9 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center text-white hover:bg-black/70 transition-colors z-20">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+                <!-- Title bar -->
+                <div class="absolute top-4 left-4 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-full text-white text-xs font-semibold">
+                    <span>涓滀含 路 5涓櫙鐐?/span>
+                </div>
+            </div>
+            <!-- Bottom sliding spots panel -->
+            <div class="bg-dark-bg/95 backdrop-blur-xl rounded-t-3xl px-4 pt-4 pb-6" style="min-height:220px">
+                <div class="w-10 h-1 bg-white/20 rounded-full mx-auto mb-4"></div>
+                <h4 class="text-white text-xs font-bold mb-3 flex items-center gap-2">
+                    <i data-lucide="map-pin" class="w-3.5 h-3.5 text-brand-green"></i> 宸叉爣璁版櫙鐐?                </h4>
+                <div class="space-y-2" id="spots-list">
+                    <!-- Injected by JS -->
+                </div>
+            </div>
+        </div>
+        <!-- ====== HOTEL BOTTOM SHEET ====== -->
+        <div id="hotel-sheet-overlay" class="absolute inset-0 z-50 hidden" style="background:rgba(0,0,0,0.5);">
+            <div id="hotel-sheet" class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl overflow-hidden" style="max-height:88%;">
+                <div class="flex justify-center pt-3 pb-1">
+                    <div class="w-10 h-1 bg-gray-200 rounded-full"></div>
+                </div>
+                <div class="relative overflow-hidden" style="height:180px">
+                    <div class="carousel-inner flex" id="hotel-carousel-inner">
+                        <img src="https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=600&auto=format&fit=crop" class="w-full flex-shrink-0 object-cover" style="height:180px">
+                        <img src="https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?q=80&w=600&auto=format&fit=crop" class="w-full flex-shrink-0 object-cover" style="height:180px">
+                        <img src="https://images.unsplash.com/photo-1631049307264-da0ec9d70304?q=80&w=600&auto=format&fit=crop" class="w-full flex-shrink-0 object-cover" style="height:180px">
+                    </div>
+                    <div class="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+                        <div class="carousel-dot w-4 h-1.5 bg-white rounded-full opacity-100" data-index="0"></div>
+                        <div class="carousel-dot w-1.5 h-1.5 bg-white rounded-full opacity-50" data-index="1"></div>
+                        <div class="carousel-dot w-1.5 h-1.5 bg-white rounded-full opacity-50" data-index="2"></div>
+                    </div>
+                    <button id="carousel-prev" class="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 bg-black/40 rounded-full flex items-center justify-center text-white hover:bg-black/60">
+                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                    </button>
+                    <button id="carousel-next" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 bg-black/40 rounded-full flex items-center justify-center text-white hover:bg-black/60">
+                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    </button>
+                    <div class="absolute top-3 left-3 bg-brand-green text-white text-[10px] px-2 py-0.5 rounded-full font-semibold">住宿详情</div>
+                </div>
+                <div class="p-4 overflow-y-auto no-scrollbar" style="max-height:calc(88vh - 180px - 2rem)">
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <h3 class="font-bold text-gray-900 text-base" id="sheet-hotel-name">推荐住宿详情</h3>
+                            <div class="flex items-center gap-1.5 mt-1">
+                                <div class="flex items-center gap-0.5 text-yellow-500">
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                    <i data-lucide="star" class="w-3 h-3 fill-current"></i>
+                                </div>
+                                <span class="text-xs text-gray-500">4.8（等待原生数据刷新）</span>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <span class="text-brand-purple font-bold text-xl" id="sheet-hotel-price">¥999</span>
+                            <span class="text-[10px] text-gray-400">/晚</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium"><i data-lucide="wifi" class="w-3 h-3 text-brand-cyan"></i> 免费 Wi‑Fi</span>
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium"><i data-lucide="coffee" class="w-3 h-3 text-brand-green"></i> 含早餐</span>
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium"><i data-lucide="car" class="w-3 h-3 text-brand-purple"></i> 接送服务</span>
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium"><i data-lucide="dumbbell" class="w-3 h-3 text-gray-400"></i> 健身房</span>
+                        <span class="flex items-center gap-1 bg-gray-50 border border-gray-100 text-[10px] text-gray-600 px-2 py-1 rounded-lg font-medium"><i data-lucide="waves" class="w-3 h-3 text-brand-cyan"></i> 泳池</span>
+                    </div>
+                    <div class="bg-gray-50 rounded-xl p-3 mb-4">
+                        <p class="text-[11px] text-gray-600 leading-relaxed italic">当前住宿详情页仅保留中文占位文案；正式运行时应由原生推荐数据注入，不再展示旧示例文本。</p>
+                        <p class="text-[10px] text-gray-400 mt-1.5">来源：TravelHub 推荐详情</p>
+                    </div>
+                    <div class="border border-gray-100 rounded-xl p-3 mb-4">
+                        <h4 class="text-xs font-bold text-gray-800 mb-2">房型信息</h4>
+                        <div class="flex justify-between items-center text-xs">
+                            <div>
+                                <p class="font-medium text-gray-700">标准双人房</p>
+                                <p class="text-gray-400 text-[10px]">约 35㎡ · 双早 · 可免费取消</p>
+                            </div>
+                            <span class="text-brand-purple font-bold">¥999/晚</span>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="hotel-favorite-btn" data-favorited="false" class="flex-1 py-3 rounded-2xl border border-gray-200 text-xs font-semibold text-gray-500 flex items-center justify-center gap-1.5 hover:bg-gray-50 transition-colors">
+                            <i data-lucide="heart" class="w-4 h-4 text-red-400"></i> <span id="hotel-fav-label">收藏</span>
+                        </button>
+                        <button id="hotel-book-btn" class="flex-[2] py-3 rounded-2xl text-white text-xs font-bold bg-origami-gradient shadow-neon-green hover:opacity-90 transition-opacity">
+                            立即预订
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- ====== ITINERARY FULL OVERLAY ====== -->
+        <div id="itinerary-full-overlay" class="absolute inset-0 z-50 hidden flex-col bg-gray-50">
+            <div class="glass-panel px-5 py-4 flex items-center justify-between border-b border-white/60">
+                <div>
+                    <h2 class="font-bold text-gray-900 text-sm">行程详情</h2>
+                    <p class="text-[10px] text-gray-400">当前行程将由原生规划结果实时注入</p>
+                </div>
+                <button id="itinerary-overlay-close" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <i data-lucide="x" class="w-4 h-4 text-gray-600"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar p-4 pb-6 space-y-4">
+                <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                    <p class="text-sm font-semibold text-gray-800">等待行程数据</p>
+                    <p class="text-[11px] text-gray-500 mt-2 leading-relaxed">这里不再保留旧示例日程。生成或同步真实行程后，将在此展示按天展开的完整计划。</p>
+                </div>
+            </div>
+        </div>
+        <!-- ====== PREFERENCE BOTTOM SHEET ====== -->
+        <div id="preference-overlay" class="absolute inset-0 z-50 hidden" style="background:rgba(0,0,0,0.5);">
+            <div id="preference-sheet" class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl overflow-hidden">
+                <div class="flex justify-center pt-3 pb-1">
+                    <div class="w-10 h-1 bg-gray-200 rounded-full"></div>
+                </div>
+                <div class="px-5 pt-2 pb-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h3 class="font-bold text-gray-900 text-sm">偏好设置</h3>
+                        <p class="text-[10px] text-gray-400 mt-0.5">这些偏好用于辅助生成更贴近需求的推荐内容。</p>
+                    </div>
+                    <button id="preference-sheet-close" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                        <i data-lucide="x" class="w-4 h-4 text-gray-600"></i>
+                    </button>
+                </div>
+                <div class="px-5 py-4">
+                    <div class="grid grid-cols-2 gap-3 mb-5">
+                        <button class="pref-chip flex items-center gap-2 px-4 py-3 rounded-2xl bg-gray-50 text-sm text-gray-600 font-medium" data-pref="nature">
+                            <span class="text-lg">🌿</span>
+                            <div class="text-left">
+                                <p class="text-xs font-semibold text-gray-800">自然风景</p>
+                                <p class="text-[10px] text-gray-400">公园、徒步、海边、山景</p>
+                            </div>
+                        </button>
+                        <button class="pref-chip flex items-center gap-2 px-4 py-3 rounded-2xl bg-gray-50 text-sm text-gray-600 font-medium" data-pref="culture">
+                            <span class="text-lg">🏛️</span>
+                            <div class="text-left">
+                                <p class="text-xs font-semibold text-gray-800">文化漫游</p>
+                                <p class="text-[10px] text-gray-400">博物馆、街区、人文体验</p>
+                            </div>
+                        </button>
+                        <button class="pref-chip flex items-center gap-2 px-4 py-3 rounded-2xl bg-gray-50 text-sm text-gray-600 font-medium" data-pref="food">
+                            <span class="text-lg">🍜</span>
+                            <div class="text-left">
+                                <p class="text-xs font-semibold text-gray-800">美食探索</p>
+                                <p class="text-[10px] text-gray-400">本地特色、热门餐厅、咖啡甜点</p>
+                            </div>
+                        </button>
+                        <button class="pref-chip flex items-center gap-2 px-4 py-3 rounded-2xl bg-gray-50 text-sm text-gray-600 font-medium" data-pref="extreme">
+                            <span class="text-lg">🎒</span>
+                            <div class="text-left">
+                                <p class="text-xs font-semibold text-gray-800">轻探险</p>
+                                <p class="text-[10px] text-gray-400">户外体验、夜游、特别路线</p>
+                            </div>
+                        </button>
+                    </div>
+                    <button id="preference-save-btn" class="w-full py-3.5 rounded-2xl text-white text-sm font-bold bg-origami-gradient shadow-neon-green hover:opacity-90 transition-opacity">
+                        保存偏好设置
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- ====== PROFILE FULL OVERLAY ====== -->
+        <div id="profile-overlay" class="absolute inset-0 z-50 hidden flex-col bg-gray-50">
+            <div class="glass-panel px-5 py-4 flex items-center justify-between border-b border-white/60 flex-shrink-0">
+                <h2 class="font-bold text-gray-900 text-sm">我的资料</h2>
+                <button id="profile-overlay-close" class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <i data-lucide="x" class="w-4 h-4 text-gray-600"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto no-scrollbar">
+                <div class="relative px-5 pt-6 pb-5 overflow-hidden" style="background:linear-gradient(135deg,rgba(16,185,129,0.12) 0%,rgba(6,182,212,0.10) 50%,rgba(168,85,247,0.10) 100%)">
+                    <div class="absolute top-0 right-0 w-28 h-28 rounded-full opacity-20" style="background:radial-gradient(circle,#06B6D4,transparent);transform:translate(30%,-30%)"></div>
+                    <div class="absolute bottom-0 left-0 w-24 h-24 rounded-full opacity-15" style="background:radial-gradient(circle,#A855F7,transparent);transform:translate(-30%,30%)"></div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-16 h-16 rounded-2xl p-[2.5px] flex-shrink-0" style="background:linear-gradient(135deg,#10B981,#06B6D4,#A855F7)">
+                            <div class="w-full h-full bg-white rounded-[14px] overflow-hidden">
+                                <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop" class="w-full h-full object-cover" alt="User">
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h3 class="font-bold text-gray-900 text-base leading-tight">旅行者</h3>
+                            <div class="flex items-center gap-1.5 mt-1">
+                                <span class="text-[10px] font-bold text-white px-2 py-0.5 rounded-full" style="background:linear-gradient(135deg,#10B981,#06B6D4)">TravelHub 用户</span>
+                            </div>
+                            <p class="text-[10px] text-gray-500 mt-1.5 flex items-center gap-1">
+                                <i data-lucide="star" class="w-3 h-3 text-yellow-400 fill-current"></i>
+                                当前资料由原生数据同步
+                            </p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2.5 mt-5 relative z-10">
+                        <div class="bg-white/70 backdrop-blur-sm rounded-2xl p-3 text-center border border-white/80">
+                            <p class="text-xl font-bold text-gray-900">0</p>
+                            <p class="text-[10px] text-gray-500 mt-0.5">历史行程</p>
+                        </div>
+                        <div class="bg-white/70 backdrop-blur-sm rounded-2xl p-3 text-center border border-white/80">
+                            <p class="text-xl font-bold text-gray-900">0</p>
+                            <p class="text-[10px] text-gray-500 mt-0.5">收藏项目</p>
+                        </div>
+                        <div class="bg-white/70 backdrop-blur-sm rounded-2xl p-3 text-center border border-white/80">
+                            <p class="text-xl font-bold text-gray-900">0</p>
+                            <p class="text-[10px] text-gray-500 mt-0.5">地图点位</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2 px-5 py-3 bg-white border-b border-gray-100">
+                    <button class="profile-tab active flex-1 py-2 rounded-xl text-xs font-bold border border-gray-200 transition-all" data-profile-tab="history">
+                        <span class="flex items-center justify-center gap-1.5">
+                            <i data-lucide="clock" class="w-3.5 h-3.5 pointer-events-none"></i> 历史
+                        </span>
+                    </button>
+                    <button class="profile-tab flex-1 py-2 rounded-xl text-xs font-bold text-gray-500 border border-gray-200 bg-gray-50 transition-all" data-profile-tab="favorites">
+                        <span class="flex items-center justify-center gap-1.5">
+                            <i data-lucide="heart" class="w-3.5 h-3.5 pointer-events-none"></i> 收藏
+                        </span>
+                    </button>
+                </div>
+                <div id="profile-tab-history" class="px-4 py-4 space-y-5">
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                        <p class="text-sm font-semibold text-gray-800">等待历史会话</p>
+                        <p class="text-[11px] text-gray-500 mt-2 leading-relaxed">这里会由原生层注入真实历史会话与历史行程数据。</p>
+                    </div>
+                </div>
+                <div id="profile-tab-favorites" class="hidden px-4 py-4 space-y-5">
+                    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                        <p class="text-sm font-semibold text-gray-800">等待收藏数据</p>
+                        <p class="text-[11px] text-gray-500 mt-2 leading-relaxed">这里会显示收藏的推荐卡片、对话节点和相关摘要。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- end app-container -->
+
+                                <script>
+(function () {
+    const runtimeUi = {
+        profileOpen: false,
+        itineraryOpen: false,
+        recommendationDetail: null,
+        seenMessageIds: {},
+        lastStateKey: '',
+        renderTimer: null,
+        renderFrame: 0,
+        pendingState: null,
+    };
+
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatText(value) {
+        const normalized = String(value == null ? '' : value).replace(/\r\n?/g, '\n').trim();
+        if (!normalized) return '';
+
+        const blocks = [];
+        let lastIndex = 0;
+        const fenceRegex = /```([^\n`]*)\n?([\s\S]*?)```/g;
+        let match;
+
+        while ((match = fenceRegex.exec(normalized)) !== null) {
+            if (match.index > lastIndex) {
+                blocks.push(renderMarkdownBlocks(normalized.slice(lastIndex, match.index)));
+            }
+            blocks.push(renderCodeFence(match[1], match[2]));
+            lastIndex = match.index + match[0].length;
+        }
+
+        if (lastIndex < normalized.length) {
+            blocks.push(renderMarkdownBlocks(normalized.slice(lastIndex)));
+        }
+
+        return `<div class="markdown-body">${blocks.filter(Boolean).join('')}</div>`;
+    }
+
+    function renderCodeFence(language, code) {
+        const safeLanguage = escapeHtml(String(language || '').trim());
+        const safeCode = escapeHtml(String(code || '').replace(/\n$/, ''));
+        const languageBadge = safeLanguage
+            ? `<div class="text-[10px] uppercase tracking-wide text-gray-400 mb-2">${safeLanguage}</div>`
+            : '';
+        return `${languageBadge}<pre><code>${safeCode}</code></pre>`;
+    }
+
+    function renderMarkdownBlocks(value) {
+        const lines = String(value || '').split('\n');
+        const html = [];
+        let paragraphLines = [];
+        let quoteLines = [];
+        let listType = null;
+        let listItems = [];
+
+        function flushParagraph() {
+            if (!paragraphLines.length) return;
+            html.push(`<p>${applyInlineMarkdown(paragraphLines.join('<br>'))}</p>`);
+            paragraphLines = [];
+        }
+
+        function flushQuote() {
+            if (!quoteLines.length) return;
+            html.push(`<blockquote>${applyInlineMarkdown(quoteLines.join('<br>'))}</blockquote>`);
+            quoteLines = [];
+        }
+
+        function flushList() {
+            if (!listType || !listItems.length) return;
+            html.push(`<${listType}>${listItems.map((item) => `<li>${applyInlineMarkdown(item)}</li>`).join('')}</${listType}>`);
+            listType = null;
+            listItems = [];
+        }
+
+        lines.forEach((rawLine) => {
+            const line = String(rawLine || '');
+            const trimmed = line.trim();
+
+            if (!trimmed) {
+                flushParagraph();
+                flushQuote();
+                flushList();
+                return;
+            }
+
+            const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+            if (headingMatch) {
+                flushParagraph();
+                flushQuote();
+                flushList();
+                const level = Math.min(headingMatch[1].length, 6);
+                html.push(`<h${level}>${applyInlineMarkdown(headingMatch[2])}</h${level}>`);
+                return;
+            }
+
+            const quoteMatch = trimmed.match(/^>\s?(.*)$/);
+            if (quoteMatch) {
+                flushParagraph();
+                flushList();
+                quoteLines.push(quoteMatch[1]);
+                return;
+            }
+
+            const unorderedMatch = trimmed.match(/^[-*+]\s+(.*)$/);
+            if (unorderedMatch) {
+                flushParagraph();
+                flushQuote();
+                if (listType && listType !== 'ul') {
+                    flushList();
+                }
+                listType = 'ul';
+                listItems.push(unorderedMatch[1]);
+                return;
+            }
+
+            const orderedMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+            if (orderedMatch) {
+                flushParagraph();
+                flushQuote();
+                if (listType && listType !== 'ol') {
+                    flushList();
+                }
+                listType = 'ol';
+                listItems.push(orderedMatch[1]);
+                return;
+            }
+
+            flushQuote();
+            flushList();
+            paragraphLines.push(trimmed);
+        });
+
+        flushParagraph();
+        flushQuote();
+        flushList();
+
+        return html.join('');
+    }
+
+    function applyInlineMarkdown(value) {
+        let text = escapeHtml(value);
+        text = text.replace(
+            /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+            (_, label, url) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`
+        );
+        text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+        text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+        text = text.replace(/(^|[^\*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+        text = text.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, '$1<em>$2</em>');
+        return text;
+    }
+
+    function dataAttrs(action, payload) {
+        const attrs = [`data-zhitu-action="${escapeHtml(action)}"`];
+        Object.entries(payload || {}).forEach(([key, value]) => {
+            if (value == null || value === '') return;
+            const attrName = key.replace(/[A-Z]/g, (char) => '-' + char.toLowerCase());
+            attrs.push(`data-${attrName}="${escapeHtml(String(value))}"`);
+        });
+        return attrs.join(' ');
+    }
+
+    function getState() {
+        return window.__ZHITU_STATE__ || null;
+    }
+
+    function readState(input) {
+        if (!input) return null;
+        if (typeof input === 'string') {
+            try {
+                return JSON.parse(input);
+            } catch (error) {
+                console.error('failed to parse zhitu state', error);
+                return null;
+            }
+        }
+        return input;
+    }
+
+    function postAction(action, payload) {
+        if (!window.RikkaZhituBridge || typeof window.RikkaZhituBridge.postMessage !== 'function') {
+            return false;
+        }
+        window.RikkaZhituBridge.postMessage(JSON.stringify({
+            type: 'action',
+            action,
+            payload: payload || {},
+        }));
+        return true;
+    }
+
+    function reportRuntime(level, message) {
+        try {
+            if (console && typeof console[level] === 'function') {
+                console[level](`[zhitu-runtime] ${message}`);
+            } else if (console && typeof console.log === 'function') {
+                console.log(`[zhitu-runtime][${level}] ${message}`);
+            }
+        } catch (error) {
+            console.log(error);
+        }
+    }
+
+    function setOverlayVisible(id, visible) {
+        const node = document.getElementById(id);
+        if (!node) return;
+        node.classList.toggle('hidden', !visible);
+        node.style.display = visible ? 'flex' : '';
+    }
+
+    function scrollMainToBottom() {
+        const container = document.getElementById('chat-container');
+        if (!container) return;
+        requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight;
+        });
+    }
+
+    function stripPreviewArtifacts() {
+        const body = document.body;
+        if (!body) return;
+
+        const textNodeType = typeof Node === 'undefined' ? 3 : Node.TEXT_NODE;
+        const elementNodeType = typeof Node === 'undefined' ? 1 : Node.ELEMENT_NODE;
+        const childNodes = body.childNodes ? Array.from(body.childNodes) : [];
+
+        childNodes.forEach((node) => {
+            if (node.nodeType === textNodeType && String(node.textContent || '').trim()) {
+                node.remove();
+                return;
+            }
+            if (node.nodeType !== elementNodeType) return;
+            const element = node;
+            const tagName = String(element.tagName || '').toUpperCase();
+            if (element.id === 'app-container' || tagName === 'SCRIPT' || tagName === 'STYLE') {
+                return;
+            }
+            element.remove();
+        });
+
+        const allElements = document.querySelectorAll ? document.querySelectorAll('body *') : [];
+        Array.from(allElements || []).forEach((element) => {
+            const text = String(element.textContent || '').trim();
+            if (!text) return;
+            if (
+                text.includes('开发者模式') ||
+                text.includes('[开发者模式]') ||
+                text.includes('开发者')
+            ) {
+                element.style.display = 'none';
+            }
+        });
+    }
+
+    function normalizeStaticLayout() {
+        const body = document.body;
+        const app = document.getElementById('app-container');
+
+        if (body && body.style) {
+            body.style.margin = '0';
+            body.style.minHeight = '100dvh';
+            body.style.backgroundColor = '#FAFAFA';
+            body.style.display = 'block';
+            body.style.fontFamily = "'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif";
+            body.style.overflow = 'hidden';
+        }
+
+        if (document.documentElement && document.documentElement.style) {
+            document.documentElement.style.backgroundColor = '#FAFAFA';
+        }
+
+        if (app && app.style) {
+            app.style.position = 'fixed';
+            app.style.inset = '0';
+            app.style.width = '100vw';
+            app.style.height = '100dvh';
+            app.style.maxWidth = '100vw';
+            app.style.maxHeight = '100dvh';
+            app.style.border = 'none';
+            app.style.borderRadius = '0';
+            app.style.boxShadow = 'none';
+            app.style.backgroundColor = '#FAFAFA';
+            app.style.zIndex = '1';
+        }
+
+        const header = document.querySelector('header');
+        if (header && header.style) {
+            header.style.paddingTop = 'calc(env(safe-area-inset-top, 0px) + 2rem)';
+            header.style.position = 'relative';
+            header.style.zIndex = '2';
+        }
+
+        const chatContainer = document.getElementById('chat-container');
+        if (chatContainer && chatContainer.style) {
+            chatContainer.style.paddingBottom = '11rem';
+        }
+
+        const input = document.getElementById('chat-input');
+        if (input) {
+            if (typeof input.setAttribute === 'function') {
+                input.setAttribute('placeholder', '输入你的目的地、日期或偏好...');
+            } else {
+                input.placeholder = '输入你的目的地、日期或偏好...';
+            }
+        }
+
+        [
+            ['itinerary', '行程'],
+            ['hotel', '住宿'],
+            ['food', '餐饮'],
+            ['activity', '活动'],
+        ].forEach(([tab, label]) => {
+            const span = document.querySelector(`.quick-tab[data-tab="${tab}"] span`);
+            if (span) span.textContent = label;
+        });
+
+        const mapBadge = document.querySelector('#map-fullscreen .absolute.top-4.left-4 span');
+        if (mapBadge) mapBadge.textContent = '地图模式 · 实时点位';
+
+        const hotelName = document.getElementById('sheet-hotel-name');
+        if (hotelName && !hotelName.dataset.zhituBound) {
+            hotelName.textContent = '住宿详情';
+        }
+        const hotelPrice = document.getElementById('sheet-hotel-price');
+        if (hotelPrice && !hotelPrice.dataset.zhituBound) {
+            hotelPrice.textContent = '待更新';
+        }
+        const favoriteLabel = document.getElementById('hotel-fav-label');
+        if (favoriteLabel) favoriteLabel.textContent = '收藏';
+
+        const itineraryClose = document.querySelector('#itinerary-full-overlay h2');
+        if (itineraryClose && !itineraryClose.dataset.zhituBound) {
+            itineraryClose.textContent = '行程详情';
+        }
+        const itineraryHint = document.querySelector('#itinerary-full-overlay .glass-panel p');
+        if (itineraryHint && !itineraryHint.dataset.zhituBound) {
+            itineraryHint.textContent = '当前行程会由原生规划结果实时注入。';
+        }
+
+        const preferenceTitle = document.querySelector('#preference-overlay h3');
+        if (preferenceTitle) preferenceTitle.textContent = '偏好设置';
+        const preferenceHint = document.querySelector('#preference-overlay .px-5.pt-2.pb-4 p');
+        if (preferenceHint) preferenceHint.textContent = '这些偏好会用于生成更贴近需求的推荐内容。';
+        const preferenceSave = document.getElementById('preference-save-btn');
+        if (preferenceSave) preferenceSave.textContent = '保存偏好设置';
+
+        const profileTitle = document.querySelector('#profile-overlay h2');
+        if (profileTitle) profileTitle.textContent = '我的资料';
+
+        let topMask = document.getElementById('zhitu-top-mask');
+        if (!topMask && body && typeof document.createElement === 'function') {
+            topMask = document.createElement('div');
+            topMask.id = 'zhitu-top-mask';
+            if (typeof body.appendChild === 'function') {
+                body.appendChild(topMask);
+            }
+        }
+        if (topMask && topMask.style) {
+            topMask.style.position = 'fixed';
+            topMask.style.top = '0';
+            topMask.style.left = '0';
+            topMask.style.right = '0';
+            topMask.style.height = 'calc(env(safe-area-inset-top, 0px) + 30px)';
+            topMask.style.background = '#FAFAFA';
+            topMask.style.pointerEvents = 'none';
+            topMask.style.zIndex = '2147483647';
+        }
+    }
+
+    function renderEmptyState(title, subtitle, buttons) {
+        return `
+            <div class="bg-white rounded-3xl border border-gray-100 shadow-sm p-5 animate-fade-in">
+                <div class="w-11 h-11 rounded-2xl bg-origami-gradient flex items-center justify-center text-white shadow-neon-green mb-4">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                </div>
+                <h3 class="text-base font-bold text-gray-900">${escapeHtml(title)}</h3>
+                <p class="text-sm text-gray-500 leading-relaxed mt-2">${escapeHtml(subtitle)}</p>
+                <div class="flex flex-wrap gap-2 mt-4">${buttons || ''}</div>
+            </div>
+        `;
+    }
+
+    function renderSuggestionChips(items, action, fieldName) {
+        return (items || []).map((item) => {
+            const value = typeof item === 'string' ? item : item && (item[fieldName] || item.name || item.title);
+            if (!value) return '';
+            const payload = {};
+            payload[fieldName] = value;
+            return `<button ${dataAttrs(action, payload)} class="px-3 py-1.5 rounded-full bg-white border border-gray-200 text-xs font-semibold text-gray-600 hover:border-brand-green/40 hover:text-brand-green transition-colors">${escapeHtml(value)}</button>`;
+        }).join('');
+    }
+
+    function renderConversationMessage(message, shouldAnimate) {
+        const role = String(message && message.role || '').toLowerCase();
+        const isUser = role === 'user';
+        const bubbleClass = isUser ? 'chat-bubble-user text-white ml-auto' : 'chat-bubble-ai text-gray-700';
+        const wrapperClass = isUser ? 'justify-end' : 'justify-start';
+        const animationClass = shouldAnimate ? 'animate-slide-up' : '';
+        const messageId = escapeHtml(message && message.id || '');
+        const avatar = isUser ? '' : `
+            <div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1">
+                <div class="w-full h-full bg-white rounded-full overflow-hidden">
+                    <img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover" alt="AI">
+                </div>
+            </div>
+        `;
+        return `
+            <div class="flex ${wrapperClass} gap-2 w-full ${animationClass}" data-zhitu-message-id="${messageId}">
+                ${avatar}
+                <div class="${bubbleClass} px-4 py-3 max-w-[86%] text-sm leading-relaxed break-words" data-zhitu-message-content="1">
+                    ${formatText(message && message.text || '')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderTripSummaryCard(state) {
+        const plan = state.travelPlan;
+        if (!plan || !plan.brief) return '';
+        const brief = plan.brief;
+        const tags = (brief.travelStyleTags || []).slice(0, 4).map((tag) =>
+            `<span class="px-2 py-1 rounded-full bg-brand-light text-brand-green text-[10px] font-semibold">${escapeHtml(tag)}</span>`
+        ).join('');
+        return `
+            <div class="pl-10 pr-2">
+                <div class="bg-white rounded-3xl border border-brand-green/15 shadow-sm p-4">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-brand-green">当前行程</p>
+                            <h3 class="text-base font-bold text-gray-900 mt-1">${escapeHtml(brief.destination || state.conversation.title || '当前行程')}</h3>
+                            <p class="text-xs text-gray-500 mt-1">${escapeHtml(brief.dateRange || brief.userIntentSummary || '当前行程数据已与原生规划结果同步。')}</p>
+                        </div>
+                        <div class="text-right flex-shrink-0">
+                            <p class="text-sm font-bold text-brand-purple">${escapeHtml(brief.budgetText || (((brief.days || (plan.itineraryDays || []).length || 0)) + ' 天'))}</p>
+                            <p class="text-[10px] text-gray-400 mt-1">${escapeHtml(plan.status || '')}</p>
+                        </div>
+                    </div>
+                    ${tags ? `<div class="flex flex-wrap gap-2 mt-3">${tags}</div>` : ''}
+                    <div class="flex gap-2 mt-4">
+                        <button ${dataAttrs('open_itinerary', {})} class="flex-1 py-2.5 rounded-2xl bg-brand-light text-brand-green text-xs font-bold hover:bg-brand-green hover:text-white transition-colors">查看行程</button>
+                        <button ${dataAttrs('open_map', { filter: state.travelUiState && state.travelUiState.selectedMapFilter || '' })} class="flex-1 py-2.5 rounded-2xl bg-brand-purple/10 text-brand-purple text-xs font-bold hover:bg-brand-purple hover:text-white transition-colors">地图</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderRecommendationSortChips(rec) {
+        return (rec.sortOptions || []).map((option) => {
+            const activeClass = option.active
+                ? 'bg-origami-gradient text-white border-transparent shadow-neon-green'
+                : 'bg-white text-gray-600 border-gray-200';
+            return `<button ${dataAttrs('sort_recommendations', { category: rec.category, sort: option.key })} class="px-3 py-1.5 rounded-full border text-xs font-semibold transition-colors ${activeClass}">${escapeHtml(option.label || option.key)}</button>`;
+        }).join('');
+    }
+
+    function renderAssistantRecommendationCard(item, category, expanded) {
+        const tags = (item.tags || []).slice(0, 5).map((tag) =>
+            `<span class="px-2 py-1 rounded-full bg-gray-100 text-gray-500 text-[10px] font-semibold">${escapeHtml(tag)}</span>`
+        ).join('');
+        const detail = expanded ? `
+            <div class="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                ${item.reason ? `<p class="text-sm text-gray-600 leading-relaxed">${escapeHtml(item.reason)}</p>` : ''}
+                <div class="grid grid-cols-2 gap-2 text-[11px] text-gray-500">
+                    ${item.priceHint ? `<div class="rounded-xl bg-gray-50 px-3 py-2"><span class="block text-gray-400">价格</span><span class="block mt-1 text-gray-700">${escapeHtml(item.priceHint)}</span></div>` : ''}
+                    ${item.ratingText ? `<div class="rounded-xl bg-gray-50 px-3 py-2"><span class="block text-gray-400">评分</span><span class="block mt-1 text-gray-700">${escapeHtml(item.ratingText)}</span></div>` : ''}
+                    ${item.area ? `<div class="rounded-xl bg-gray-50 px-3 py-2"><span class="block text-gray-400">区域</span><span class="block mt-1 text-gray-700">${escapeHtml(item.area)}</span></div>` : ''}
+                    ${item.distanceText ? `<div class="rounded-xl bg-gray-50 px-3 py-2"><span class="block text-gray-400">距离</span><span class="block mt-1 text-gray-700">${escapeHtml(item.distanceText)}</span></div>` : ''}
+                    ${item.inventoryHint ? `<div class="rounded-xl bg-gray-50 px-3 py-2 col-span-2"><span class="block text-gray-400">提示</span><span class="block mt-1 text-gray-700">${escapeHtml(item.inventoryHint)}</span></div>` : ''}
+                </div>
+                <div class="flex gap-2">
+                    <button ${dataAttrs('open_map', { filter: category, poiId: item.id || '' })} class="flex-1 py-2.5 rounded-2xl bg-brand-light text-brand-green text-xs font-bold hover:bg-brand-green hover:text-white transition-colors">地图</button>
+                    <button ${dataAttrs('request_recommendations', { category })} class="flex-1 py-2.5 rounded-2xl bg-brand-purple/10 text-brand-purple text-xs font-bold hover:bg-brand-purple hover:text-white transition-colors">刷新推荐</button>
+                </div>
+            </div>
+        ` : '';
+        return `
+            <div class="bg-white rounded-3xl border border-gray-100 shadow-sm p-4">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0 flex-1">
+                        <h3 class="text-base font-bold text-gray-900">${escapeHtml(item.title || '推荐项')}</h3>
+                        <p class="text-xs text-gray-500 mt-1">${escapeHtml(item.subtitle || item.area || '')}</p>
+                    </div>
+                    <div class="text-right flex-shrink-0">
+                        ${item.priceHint ? `<p class="text-sm font-bold text-brand-purple">${escapeHtml(item.priceHint)}</p>` : ''}
+                        ${item.ratingText ? `<p class="text-[11px] text-yellow-500 mt-1">${escapeHtml(item.ratingText)}</p>` : ''}
+                        ${item.distanceText ? `<p class="text-[10px] text-gray-400 mt-1">${escapeHtml(item.distanceText)}</p>` : ''}
+                    </div>
+                </div>
+                ${tags ? `<div class="flex flex-wrap gap-2 mt-3">${tags}</div>` : ''}
+                <div class="flex gap-2 mt-4">
+                    <button ${dataAttrs('toggle_recommendation_detail', { category, itemId: item.id || '' })} class="flex-1 py-2.5 rounded-2xl bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200 transition-colors">${expanded ? '收起详情' : '查看详情'}</button>
+                </div>
+                ${detail}
+            </div>
+        `;
+    }
+
+    function renderAssistantRecommendation(state, rec) {
+        if (!rec) return '';
+        const expandedKey = runtimeUi.recommendationDetail && runtimeUi.recommendationDetail.category === rec.category
+            ? runtimeUi.recommendationDetail.itemId
+            : null;
+        const content = (rec.items || []).length
+            ? (rec.items || []).map((item) => renderAssistantRecommendationCard(item, rec.category, expandedKey === item.id)).join('')
+            : renderEmptyState(
+                rec.emptyTitle || '暂无推荐',
+                rec.emptyDescription || '当前暂无可用推荐数据。',
+                `<button ${dataAttrs('request_recommendations', { category: rec.category })} class="px-4 py-2.5 rounded-2xl bg-origami-gradient text-white text-xs font-bold shadow-neon-green">重试</button>`
+            );
+        return `
+            <div class="pl-10 pr-2 space-y-3">
+                <div class="bg-white rounded-3xl border border-brand-green/15 shadow-sm p-4">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-brand-green">对话推荐</p>
+                            <h3 class="text-base font-bold text-gray-900 mt-1">${escapeHtml(rec.title || '推荐结果')}</h3>
+                        </div>
+                        <span class="px-2 py-1 rounded-full bg-brand-light text-brand-green text-[10px] font-semibold">${escapeHtml(rec.category || '')}</span>
+                    </div>
+                    <div class="flex flex-wrap gap-2 mt-4">${renderRecommendationSortChips(rec)}</div>
+                </div>
+                ${content}
+            </div>
+        `;
+    }
+
+    function renderConversation(container, state) {
+        const conversation = state.conversation || {};
+        const messages = conversation.messages || [];
+        const ui = state.travelUiState || {};
+        const assistantRecommendation = state.assistantRecommendation || null;
+        const currentMessageIds = messages
+            .map((message) => String(message && message.id || ''))
+            .filter(Boolean);
+        let html = '';
+
+        if (!messages.length) {
+            const destinationName = (ui.selectedDestination && ui.selectedDestination.name)
+                || (state.travelPlan && state.travelPlan.brief && state.travelPlan.brief.destination)
+                || '告诉我你想去哪、什么时候出发';
+            const queryText = ui.searchQuery
+                || '输入目的地、日期、预算或偏好，原生规划结果会实时回流到当前页面。';
+            html += `
+                <div class="bg-white rounded-3xl border border-gray-100 shadow-sm p-5 animate-fade-in">
+                    <div class="flex items-start gap-3">
+                        <div class="w-11 h-11 rounded-2xl bg-origami-gradient flex items-center justify-center text-white shadow-neon-green flex-shrink-0">
+                            <i data-lucide="compass" class="w-5 h-5"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-brand-green">AI 行程规划</p>
+                            <h3 class="text-base font-bold text-gray-900 mt-1">${escapeHtml(destinationName)}</h3>
+                            <p class="text-sm text-gray-500 leading-relaxed mt-2">${escapeHtml(queryText)}</p>
+                            <div class="mt-4 rounded-2xl bg-gray-50 border border-gray-100 px-4 py-3">
+                                <p class="text-[11px] font-semibold text-gray-700">天气</p>
+                                <p class="text-[11px] text-gray-500 mt-1">${escapeHtml(ui.weatherSummary || '完成目的地同步后，这里会显示天气与出行建议。')}</p>
+                            </div>
+                        </div>
+                    </div>
+                    ${ui.suggestions && ui.suggestions.length ? `<div class="mt-4"><p class="text-[11px] font-semibold text-gray-700 mb-2">目的地建议</p><div class="flex flex-wrap gap-2">${renderSuggestionChips(ui.suggestions, 'select_destination', 'name')}</div></div>` : ''}
+                    ${conversation.suggestions && conversation.suggestions.length ? `<div class="mt-4"><p class="text-[11px] font-semibold text-gray-700 mb-2">快捷问题</p><div class="flex flex-wrap gap-2">${renderSuggestionChips(conversation.suggestions, 'send_message', 'text')}</div></div>` : ''}
+                    <div class="flex gap-2 mt-4">
+                        <button ${dataAttrs('generate_plan', {})} class="flex-1 py-2.5 rounded-2xl bg-origami-gradient text-white text-xs font-bold shadow-neon-green">生成行程</button>
+                        <button ${dataAttrs('open_map', { filter: ui.selectedMapFilter || '' })} class="flex-1 py-2.5 rounded-2xl bg-gray-100 text-gray-700 text-xs font-bold hover:bg-gray-200 transition-colors">地图</button>
+                    </div>
+                </div>
+            `;
+        } else {
+            html += messages.map((message) => {
+                const messageId = String(message && message.id || '');
+                return renderConversationMessage(message, messageId ? !runtimeUi.seenMessageIds[messageId] : false);
+            }).join('');
+            if (conversation.isGenerating) {
+                html += `
+                    <div class="flex items-start gap-2 w-full" id="zhitu-generating-indicator">
+                        <div class="w-8 h-8 rounded-full bg-origami-gradient p-[1px] flex-shrink-0 mt-1">
+                            <div class="w-full h-full bg-white rounded-full overflow-hidden">
+                                <img src="https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=100&auto=format&fit=crop" class="w-full h-full object-cover" alt="AI">
+                            </div>
+                        </div>
+                        <div class="chat-bubble-ai px-4 py-4 max-w-[80%] flex items-center gap-1">
+                            <div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:0ms"></div>
+                            <div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:150ms"></div>
+                            <div class="w-1.5 h-1.5 bg-brand-green rounded-full animate-bounce" style="animation-delay:300ms"></div>
+                        </div>
+                    </div>
+                `;
+            }
+            html += renderTripSummaryCard(state);
+            html += renderAssistantRecommendation(state, assistantRecommendation);
+        }
+
+        if (!messages.length && assistantRecommendation) {
+            html += `<div class="mt-4">${renderAssistantRecommendation(state, assistantRecommendation)}</div>`;
+        }
+
+        container.innerHTML = html;
+        currentMessageIds.forEach((messageId) => {
+            runtimeUi.seenMessageIds[messageId] = true;
+        });
+        scrollMainToBottom();
+    }
+
+    function renderItineraryDay(day) {
+        const items = (day.items || []).map((item) => `
+            <div class="flex gap-3 items-start">
+                <span class="text-[10px] text-gray-400 w-12 flex-shrink-0 mt-0.5">${escapeHtml(item.timeSlot || '待定')}</span>
+                <div class="flex-1 bg-gray-50 rounded-xl px-3 py-2.5">
+                    <p class="text-xs font-semibold text-gray-800">${escapeHtml(item.title || '未命名行程项')}</p>
+                    ${item.description ? `<p class="text-[10px] text-gray-500 mt-1 leading-relaxed">${escapeHtml(item.description)}</p>` : ''}
+                </div>
+            </div>
+        `).join('');
+        return `<div class="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm"><h4 class="text-sm font-bold text-gray-900 mb-2">${escapeHtml(day.title || '行程日')}</h4><p class="text-[10px] text-gray-400 mb-3">${escapeHtml(day.dateText || day.weatherHint || '')}</p><div class="space-y-2.5">${items || '<p class="text-xs text-gray-400">暂无行程项</p>'}</div></div>`;
+    }
+
+    function renderItineraryOverlay(state) {
+        const overlay = document.getElementById('itinerary-full-overlay');
+        if (!overlay) return;
+        const titleEl = overlay.querySelector('h2');
+        const subtitleEl = overlay.querySelector('p');
+        const body = overlay.querySelector('.flex-1.overflow-y-auto');
+        const plan = state.travelPlan || {};
+        const brief = plan.brief || {};
+        const days = plan.itineraryDays || [];
+        if (titleEl) titleEl.textContent = brief.destination || state.conversation.title || '行程详情';
+        if (subtitleEl) subtitleEl.textContent = brief.dateRange || brief.userIntentSummary || '当前行程详情';
+        if (!body) return;
+        body.innerHTML = days.length
+            ? `${days.map(renderItineraryDay).join('')}<div class="flex gap-2 pt-4"><button ${dataAttrs('export_itinerary', {})} class="flex-1 py-3 rounded-2xl bg-brand-light text-brand-green text-xs font-semibold">导出 Markdown</button><button ${dataAttrs('share_itinerary', {})} class="flex-1 py-3 rounded-2xl bg-brand-purple/10 text-brand-purple text-xs font-semibold">分享行程</button></div>`
+            : renderEmptyState('暂无行程', '请先生成行程，完整的日程安排会显示在这里。', `<button ${dataAttrs('generate_plan', {})} class="px-4 py-2.5 rounded-2xl bg-origami-gradient text-white text-xs font-bold shadow-neon-green">生成行程</button>`);
+    }
+
+    function renderItinerary(container, state) {
+        const plan = state.travelPlan || {};
+        const brief = plan.brief || {};
+        const days = plan.itineraryDays || [];
+        container.innerHTML = days.length
+            ? `<div class="bg-white rounded-3xl border border-gray-100 shadow-sm p-5 animate-fade-in"><h3 class="text-lg font-bold text-gray-900">${escapeHtml(brief.destination || state.conversation.title || '行程')}</h3><p class="text-sm text-gray-500 mt-2">${escapeHtml(brief.userIntentSummary || brief.dateRange || '下方内容已与原生行程规划结果同步。')}</p><div class="flex gap-2 mt-4"><button data-zhitu-local="open-itinerary-overlay" class="flex-1 py-2.5 rounded-2xl bg-brand-light text-brand-green text-xs font-bold">查看完整行程</button><button ${dataAttrs('replan_trip', { conversationId: state.currentTripSummary && state.currentTripSummary.conversationId || state.conversation.id })} class="flex-1 py-2.5 rounded-2xl bg-brand-purple/10 text-brand-purple text-xs font-bold">重新规划</button></div></div><div class="space-y-4 mt-4">${days.map(renderItineraryDay).join('')}</div>`
+            : renderEmptyState('暂无行程', '继续对话或生成计划后，这里会展示完整行程。', `<button ${dataAttrs('generate_plan', {})} class="px-4 py-2.5 rounded-2xl bg-origami-gradient text-white text-xs font-bold shadow-neon-green">生成行程</button>`);
+        renderItineraryOverlay(state);
+    }
+
+    function renderMap(container, state) {
+        const pois = (state.travelPlan && state.travelPlan.pois) || [];
+        const filter = state.travelUiState && state.travelUiState.selectedMapFilter || 'activity';
+        container.innerHTML = pois.length
+            ? `<div class="bg-white rounded-3xl border border-gray-100 shadow-sm p-5 animate-fade-in"><div class="flex items-start justify-between gap-3"><div class="min-w-0 flex-1"><p class="text-[10px] font-bold uppercase tracking-wider text-brand-green">地图概览</p><h3 class="text-lg font-bold text-gray-900 mt-1">${escapeHtml((state.travelPlan && state.travelPlan.brief && state.travelPlan.brief.destination) || '当前行程地图')}</h3></div><button ${dataAttrs('open_map', { filter })} class="px-4 py-2.5 rounded-2xl bg-origami-gradient text-white text-xs font-bold shadow-neon-green">打开原生地图</button></div><div class="space-y-3 mt-4">${pois.slice(0, 8).map((poi) => `<button ${dataAttrs('open_map', { filter, poiId: poi.id || '' })} class="w-full text-left rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3"><p class="text-sm font-semibold text-gray-800">${escapeHtml(poi.name || '点位')}</p><p class="text-[11px] text-gray-500 mt-1">${escapeHtml(poi.address || poi.category || '')}</p></button>`).join('')}</div></div>`
+            : renderEmptyState('暂无地图点位', '完成目的地同步或生成行程后，这里会展示真实 POI 数据。', `<button ${dataAttrs('open_map', { filter })} class="px-4 py-2.5 rounded-2xl bg-origami-gradient text-white text-xs font-bold shadow-neon-green">打开原生地图</button>`);
+    }
+
+    function applyProfileTab(activeTab) {
+        document.querySelectorAll('.profile-tab').forEach((button) => {
+            const isActive = button.getAttribute('data-profile-tab') === activeTab;
+            button.classList.toggle('active', isActive);
+            button.classList.toggle('text-gray-500', !isActive);
+            button.classList.toggle('bg-gray-50', !isActive);
+            button.classList.toggle('text-white', isActive);
+        });
+        const historyPanel = document.getElementById('profile-tab-history');
+        const favoritesPanel = document.getElementById('profile-tab-favorites');
+        if (historyPanel) historyPanel.classList.toggle('hidden', activeTab !== 'history');
+        if (favoritesPanel) favoritesPanel.classList.toggle('hidden', activeTab !== 'favorites');
+    }
+
+    function renderProfile(state) {
+        const overlay = document.getElementById('profile-overlay');
+        if (!overlay) return;
+        const user = state.user || {};
+        const stats = user.stats || [];
+        const nameEl = overlay.querySelector('h3.font-bold.text-gray-900.text-base.leading-tight');
+        if (nameEl) nameEl.textContent = user.name || '旅行者';
+        const statCards = overlay.querySelectorAll('.grid.grid-cols-3 > div');
+        stats.slice(0, 3).forEach((stat, index) => {
+            const card = statCards[index];
+            if (!card) return;
+            const lines = card.querySelectorAll('p');
+            if (lines[0]) lines[0].textContent = stat.value || '0';
+            if (lines[1]) lines[1].textContent = stat.label || '';
+        });
+        const historyRoot = document.getElementById('profile-tab-history');
+        const favoriteRoot = document.getElementById('profile-tab-favorites');
+        if (historyRoot) {
+            historyRoot.innerHTML = `<div class="space-y-3">${(state.historyConversations || []).map((item) => `<button ${dataAttrs('resume_history_session', { conversationId: item.id || '' })} class="w-full text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-4"><p class="text-sm font-bold text-gray-800">${escapeHtml(item.title || '历史会话')}</p><p class="text-[10px] text-gray-400 mt-1">${escapeHtml(item.subtitle || item.updatedAt || '')}</p><p class="text-[11px] text-gray-500 mt-2">${escapeHtml(item.preview || '')}</p></button>`).join('') || renderEmptyState('暂无历史会话', '保存过的旅行对话会显示在这里。', '')}</div>`;
+        }
+        if (favoriteRoot) {
+            favoriteRoot.innerHTML = `<div class="space-y-3 px-4 py-4">${(state.favoriteItems || []).map((item) => `<button ${dataAttrs('open_favorite_item', { conversationId: item.conversationId || '', nodeId: item.nodeId || '', category: item.category || '' })} class="w-full text-left bg-white rounded-2xl border border-gray-100 shadow-sm p-4"><p class="text-sm font-bold text-gray-800">${escapeHtml(item.title || '收藏项')}</p><p class="text-[10px] text-gray-400 mt-1">${escapeHtml(item.subtitle || item.reason || item.category || '')}</p></button>`).join('') || renderEmptyState('暂无收藏', '收藏的推荐卡片和会话节点会显示在这里。', '')}</div>`;
+        }
+        applyProfileTab((state.profileUiState && state.profileUiState.activeTab) || 'history');
+    }
+
+    function applyHeader(state) {
+        const titleEl = document.querySelector('header h1');
+        const subtitleEl = document.querySelector('header p');
+        const brief = state.travelPlan && state.travelPlan.brief;
+        const title = (brief && brief.destination) || state.conversation.title || '智途 TravelHub';
+        const subtitle = (state.travelUiState && state.travelUiState.weatherSummary) || (brief && brief.dateRange) || '行程助手已连接';
+        if (titleEl) titleEl.textContent = title;
+        if (subtitleEl) subtitleEl.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-brand-green animate-pulse"></span> ' + escapeHtml(subtitle);
+        document.title = '';
+    }
+
+    function applyQuickTabs(currentTab, assistantRecommendation) {
+        const activeTab = currentTab === 'ai' && assistantRecommendation && assistantRecommendation.category
+            ? assistantRecommendation.category
+            : currentTab;
+        document.querySelectorAll('.quick-tab[data-tab]').forEach((tab) => {
+            tab.classList.toggle('active', tab.getAttribute('data-tab') === activeTab);
+        });
+    }
+
+    function renderMain(state) {
+        const container = document.getElementById('chat-container');
+        if (!container) return;
+        const currentTab = String(state.currentTab || 'home').toLowerCase();
+        applyQuickTabs(currentTab, state.assistantRecommendation || null);
+        if (currentTab === 'itinerary') {
+            renderItinerary(container, state);
+        } else if (currentTab === 'map') {
+            renderMap(container, state);
+        } else {
+            renderConversation(container, state);
+        }
+    }
+
+    function renderApp() {
+        const state = getState();
+        if (!state) {
+            reportRuntime('warn', 'renderApp called without state');
+            return;
+        }
+        stripPreviewArtifacts();
+        normalizeStaticLayout();
+        if (!state.assistantRecommendation) {
+            runtimeUi.recommendationDetail = null;
+        }
+        applyHeader(state);
+        renderMain(state);
+        renderProfile(state);
+        renderItineraryOverlay(state);
+        setOverlayVisible('profile-overlay', runtimeUi.profileOpen);
+        setOverlayVisible('itinerary-full-overlay', runtimeUi.itineraryOpen);
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+        reportRuntime('info', `render ok: tab=${String(state.currentTab || 'home')}`);
+    }
+
+    function flushPendingRender(forceState) {
+        if (runtimeUi.renderTimer) {
+            clearTimeout(runtimeUi.renderTimer);
+            runtimeUi.renderTimer = null;
+        }
+        if (runtimeUi.renderFrame) {
+            cancelAnimationFrame(runtimeUi.renderFrame);
+            runtimeUi.renderFrame = 0;
+        }
+        const nextState = forceState || runtimeUi.pendingState;
+        if (!nextState) return;
+        runtimeUi.pendingState = null;
+        window.__ZHITU_STATE__ = nextState;
+        bindRuntimeEvents();
+        renderApp();
+    }
+
+    function scheduleStateRender(nextState) {
+        const isGenerating = !!(nextState && nextState.conversation && nextState.conversation.isGenerating);
+        if (!isGenerating) {
+            flushPendingRender(nextState);
+            return;
+        }
+        runtimeUi.pendingState = nextState;
+        if (runtimeUi.renderTimer || runtimeUi.renderFrame) {
+            return;
+        }
+        runtimeUi.renderTimer = setTimeout(() => {
+            runtimeUi.renderTimer = null;
+            runtimeUi.renderFrame = requestAnimationFrame(() => {
+                runtimeUi.renderFrame = 0;
+                flushPendingRender();
+            });
+        }, 120);
+    }
+
+    function handleLocalAction(name) {
+        if (name === 'open-profile') {
+            runtimeUi.profileOpen = true;
+            renderApp();
+            postAction('open_profile', {});
+            return true;
+        }
+        if (name === 'close-profile') {
+            runtimeUi.profileOpen = false;
+            renderApp();
+            postAction('close_profile', {});
+            return true;
+        }
+        if (name === 'open-itinerary-overlay') {
+            runtimeUi.itineraryOpen = true;
+            renderApp();
+            return true;
+        }
+        if (name === 'close-itinerary-overlay') {
+            runtimeUi.itineraryOpen = false;
+            renderApp();
+            return true;
+        }
+        return false;
+    }
+
+    function handleDatasetAction(node) {
+        const action = node.dataset.zhituAction;
+        if (!action) return false;
+        const payload = {};
+        Object.entries(node.dataset).forEach(([key, value]) => {
+            if (key === 'zhituAction' || key === 'zhituLocal') return;
+            payload[key] = value;
+        });
+        if (action === 'switch_tab' && payload.tab) {
+            const isRecommendationTab = ['hotel', 'food', 'activity'].includes(String(payload.tab).toLowerCase());
+            const state = getState();
+            if (state && !isRecommendationTab) {
+                state.currentTab = payload.tab;
+                renderApp();
+            }
+        }
+        if (action === 'switch_profile_tab' && payload.tab) {
+            const state = getState();
+            if (state) {
+                state.profileUiState = state.profileUiState || {};
+                state.profileUiState.activeTab = payload.tab;
+                renderApp();
+            }
+        }
+        if (action === 'toggle_recommendation_detail') {
+            const nextKey = { category: payload.category || '', itemId: payload.itemId || '' };
+            const isSame = runtimeUi.recommendationDetail && runtimeUi.recommendationDetail.category === nextKey.category && runtimeUi.recommendationDetail.itemId === nextKey.itemId;
+            runtimeUi.recommendationDetail = isSame ? null : nextKey;
+            renderApp();
+            return true;
+        }
+        if (action === 'request_recommendations' || action === 'sort_recommendations') {
+            runtimeUi.recommendationDetail = null;
+        }
+        return postAction(action, payload);
+    }
+
+    function submitInput() {
+        const input = document.getElementById('chat-input');
+        if (!input) {
+            reportRuntime('error', 'chat-input not found');
+            return;
+        }
+        const text = (input.value || '').trim();
+        if (!text) {
+            reportRuntime('warn', 'submit ignored: empty input');
+            return;
+        }
+        input.value = '';
+        reportRuntime('info', `submitInput: ${text}`);
+        postAction('send_message', { text });
+    }
+
+    function bindRuntimeEvents() {
+        if (window.__ZHITU_RUNTIME_BOUND__) return;
+        window.__ZHITU_RUNTIME_BOUND__ = true;
+
+        document.addEventListener('click', (event) => {
+            const actionNode = event.target.closest('[data-zhitu-action]');
+            if (actionNode) {
+                event.preventDefault();
+                event.stopPropagation();
+                handleDatasetAction(actionNode);
+                return;
+            }
+
+            const localNode = event.target.closest('[data-zhitu-local]');
+            if (localNode) {
+                event.preventDefault();
+                event.stopPropagation();
+                handleLocalAction(localNode.dataset.zhituLocal);
+                return;
+            }
+
+            const quickTab = event.target.closest('.quick-tab[data-tab]');
+            if (quickTab) {
+                event.preventDefault();
+                event.stopPropagation();
+                const tabValue = quickTab.getAttribute('data-tab') || 'home';
+                const action = ['hotel', 'food', 'activity'].includes(tabValue) ? 'request_recommendations' : 'switch_tab';
+                handleDatasetAction({
+                    dataset: {
+                        zhituAction: action,
+                        tab: tabValue,
+                        category: tabValue,
+                    },
+                });
+                return;
+            }
+
+            if (event.target.closest('#send-btn')) {
+                event.preventDefault();
+                event.stopPropagation();
+                submitInput();
+                return;
+            }
+
+            if (event.target.closest('#header-map-btn')) {
+                event.preventDefault();
+                event.stopPropagation();
+                postAction('open_map', {});
+                return;
+            }
+
+            if (event.target.closest('#user-avatar-btn')) {
+                event.preventDefault();
+                event.stopPropagation();
+                handleLocalAction('open-profile');
+                return;
+            }
+
+            if (event.target.closest('#profile-overlay-close')) {
+                event.preventDefault();
+                event.stopPropagation();
+                handleLocalAction('close-profile');
+                return;
+            }
+
+            const profileTab = event.target.closest('.profile-tab[data-profile-tab]');
+            if (profileTab) {
+                event.preventDefault();
+                event.stopPropagation();
+                handleDatasetAction({
+                    dataset: {
+                        zhituAction: 'switch_profile_tab',
+                        tab: profileTab.getAttribute('data-profile-tab') || 'history',
+                    },
+                });
+                return;
+            }
+
+            if (event.target.closest('#itinerary-overlay-close')) {
+                event.preventDefault();
+                event.stopPropagation();
+                handleLocalAction('close-itinerary-overlay');
+            }
+        }, true);
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey && event.target && event.target.id === 'chat-input') {
+                event.preventDefault();
+                event.stopPropagation();
+                submitInput();
+            }
+        }, true);
+    }
+
+    window.openProfileOverlay = function () {
+        runtimeUi.profileOpen = true;
+        renderApp();
+    };
+
+    window.closeProfileOverlay = function () {
+        runtimeUi.profileOpen = false;
+        renderApp();
+    };
+
+    window.openItineraryOverlay = function () {
+        runtimeUi.itineraryOpen = true;
+        renderApp();
+    };
+
+    window.closeItineraryOverlay = function () {
+        runtimeUi.itineraryOpen = false;
+        renderApp();
+    };
+
+    window._dispatchTabByKey = function (tabKey) {
+        const action = ['hotel', 'food', 'activity'].includes(String(tabKey).toLowerCase()) ? 'request_recommendations' : 'switch_tab';
+        postAction(action, { tab: tabKey, category: tabKey });
+    };
+
+    window._handleNavClick = function (item) {
+        const tabKey = item && typeof item.getAttribute === 'function' ? item.getAttribute('data-tab') : '';
+        if (!tabKey) return;
+        const action = ['hotel', 'food', 'activity'].includes(String(tabKey).toLowerCase()) ? 'request_recommendations' : 'switch_tab';
+        postAction(action, { tab: tabKey, category: tabKey });
+    };
+
+    window.__ZHITU_RECEIVE_STATE__ = function (input) {
+        try {
+            const rawStateKey = typeof input === 'string' ? input : '';
+            if (rawStateKey && rawStateKey === runtimeUi.lastStateKey) {
+                return;
+            }
+            const nextState = readState(input);
+            if (!nextState) {
+                reportRuntime('error', 'readState returned null');
+                return;
+            }
+            runtimeUi.lastStateKey = rawStateKey || runtimeUi.lastStateKey;
+            scheduleStateRender(nextState);
+        } catch (error) {
+            reportRuntime('error', `receive state failed: ${error && error.message ? error.message : String(error)}`);
+            throw error;
+        }
+    };
+
+    stripPreviewArtifacts();
+    normalizeStaticLayout();
+    bindRuntimeEvents();
+    window.onerror = function (message, source, lineno, colno) {
+        reportRuntime('error', `${String(message)} @ ${String(lineno || 0)}:${String(colno || 0)}`);
+        return false;
+    };
+})();
+    </script>
+
+    <script>
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+    </script>
+</body>
+</html>
+
+
+

@@ -1,5 +1,6 @@
-package me.rerere.rikkahub.ui.pages.travel
+﻿package me.rerere.rikkahub.ui.pages.travel
 
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -62,20 +63,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.db.entity.FavoriteEntity
+import me.rerere.rikkahub.data.favorite.NodeFavoriteAdapter
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.FavoriteType
 import me.rerere.rikkahub.data.model.TravelItineraryDay
 import me.rerere.rikkahub.data.model.TravelItemCategory
 import me.rerere.rikkahub.data.model.TravelPlanningBrief
 import me.rerere.rikkahub.data.model.TravelPlanningState
+import me.rerere.rikkahub.data.model.TravelPlan
 import me.rerere.rikkahub.data.model.TravelPoi
 import me.rerere.rikkahub.data.model.TravelRecommendationCategory
 import me.rerere.rikkahub.data.model.TravelRecommendationItem
 import me.rerere.rikkahub.data.model.TravelSearchSuggestion
+import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.FavoriteRepository
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
@@ -88,6 +96,7 @@ import me.rerere.rikkahub.utils.base64Encode
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
+import java.io.File
 import kotlin.uuid.Uuid
 
 private val TravelBg = Color(0xFFF1FBF8)
@@ -110,12 +119,41 @@ private data class TravelPalette(
     val accent: Color,
 )
 
+private data class TravelHistoryConversationSummary(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val preview: String,
+)
+
+private data class TravelHistoryTripSummary(
+    val conversationId: String,
+    val title: String,
+    val summary: String,
+    val status: String,
+)
+
+private data class TravelFavoriteSummary(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val category: String,
+    val conversationId: String? = null,
+    val nodeId: String? = null,
+)
+
+private data class TravelCurrentTripSummary(
+    val conversationId: String?,
+    val title: String,
+    val summary: String,
+)
+
 private enum class TravelTab(val route: String, val label: String, val icon: String) {
-    Home("home", "首页", "🏠"),
-    Map("map", "地图", "🗺"),
-    Itinerary("itinerary", "行程", "🗓"),
-    Ai("ai", "AI", "✨"),
-    Mine("mine", "我的", "👤"),
+    Home("home", "Home", "H"),
+    Map("map", "Map", "M"),
+    Itinerary("itinerary", "Trip", "T"),
+    Ai("ai", "AI", "A"),
+    Mine("mine", "Me", "P"),
 }
 
 @Composable
@@ -130,8 +168,18 @@ fun TravelHubPage(
 ) {
     val vm: ChatVM = koinViewModel(parameters = { parametersOf(id.toString()) })
     val filesManager: FilesManager = koinInject()
+    val conversationRepo: ConversationRepository = koinInject()
+    val favoriteRepository: FavoriteRepository = koinInject()
     val nav = LocalNavController.current
+    val context = LocalContext.current
     val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val historyConversationCount by vm.historyConversationCount.collectAsStateWithLifecycle()
+    val assistantConversations by conversationRepo
+        .getConversationsOfAssistant(conversation.assistantId)
+        .collectAsStateWithLifecycle(emptyList())
+    val favoriteEntities by favoriteRepository
+        .listByType(FavoriteType.NODE)
+        .collectAsStateWithLifecycle(emptyList())
     val ui = vm.travelHubUiState
     var tab by rememberSaveable(id.toString()) {
         mutableStateOf(TravelTab.entries.firstOrNull { it.route == startTab } ?: TravelTab.Home)
@@ -143,6 +191,27 @@ fun TravelHubPage(
     }
     val displayedWeatherSummary = vm.homeWeatherSummary(conversation)
     val visibleMapPois = vm.visibleMapPois(conversation, highlightPoiId)
+    val historyConversations = remember(assistantConversations) {
+        assistantConversations
+            .sortedByDescending { it.updateAt }
+            .take(4)
+            .map(Conversation::toTravelHistoryConversationSummary)
+    }
+    val historyTrips = remember(assistantConversations) {
+        assistantConversations
+            .sortedByDescending { it.updateAt }
+            .mapNotNull(Conversation::toTravelHistoryTripSummary)
+            .take(4)
+    }
+    val favoriteItems = remember(favoriteEntities, conversation) {
+        favoriteEntities
+            .mapNotNull(FavoriteEntity::toTravelFavoriteSummary)
+            .ifEmpty { conversation.travelPlan.toFallbackFavoriteSummaries() }
+            .take(6)
+    }
+    val currentTripSummary = remember(conversation) {
+        conversation.toTravelCurrentTripSummary()
+    }
     val imeVisible = WindowInsets.isImeVisible
 
     LaunchedEffect(conversation.travelPlanningState) {
@@ -218,7 +287,7 @@ fun TravelHubPage(
         },
     ) { inner ->
         when (tab) {
-            TravelTab.Home -> HomeTab(
+            TravelTab.Home -> IntegratedHomeTab(
                 modifier = Modifier.padding(inner),
                 conversation = conversation,
                 ui = ui,
@@ -232,6 +301,8 @@ fun TravelHubPage(
                 onOpenActivities = { nav.navigate(Screen.TravelActivities(id.toString())) },
                 onOpenMap = { tab = TravelTab.Map },
                 onOpenAi = { tab = TravelTab.Ai },
+                onOpenItinerary = { tab = TravelTab.Itinerary },
+                onOpenMine = { tab = TravelTab.Mine },
             )
 
             TravelTab.Map -> MapTab(
@@ -245,25 +316,62 @@ fun TravelHubPage(
                 onSelectFilter = vm::selectTravelMapFilter,
             )
 
-            TravelTab.Itinerary -> ItineraryTab(
+            TravelTab.Itinerary -> IntegratedItineraryTab(
                 modifier = Modifier.padding(inner),
                 conversation = conversation,
                 onStartPlanning = { showSheet = true },
                 onOpenAi = { tab = TravelTab.Ai },
+                onOpenMap = { tab = TravelTab.Map },
+                onExportTrip = {
+                    val file = exportTripMarkdownFile(context, conversation)
+                    Toast.makeText(context, "宸插鍑哄埌 ${file.absolutePath}", Toast.LENGTH_LONG).show()
+                },
+                onShareTrip = {
+                    shareTripMarkdownFile(context, conversation)
+                },
             )
 
-            TravelTab.Ai -> AiTab(
+            TravelTab.Ai -> IntegratedAiTab(
                 modifier = Modifier.padding(inner),
                 vm = vm,
                 conversation = conversation,
                 nodeId = nodeId,
                 onOpenItinerary = { tab = TravelTab.Itinerary },
+                onOpenMap = { tab = TravelTab.Map },
+                onOpenHotels = { nav.navigate(Screen.TravelHotels(id.toString())) },
+                onOpenFoods = { nav.navigate(Screen.TravelFoods(id.toString())) },
+                onOpenActivities = { nav.navigate(Screen.TravelActivities(id.toString())) },
             )
 
-            TravelTab.Mine -> MineTab(
+            TravelTab.Mine -> ProfileIntegratedMineTab(
                 modifier = Modifier.padding(inner),
                 conversation = conversation,
+                historyConversationCount = historyConversationCount,
+                historyConversations = historyConversations,
+                historyTrips = historyTrips,
+                favoriteItems = favoriteItems,
+                currentTripSummary = currentTripSummary,
                 onOpenCurrentTrip = { tab = TravelTab.Itinerary },
+                onOpenHistoryConversation = { conversationId ->
+                    nav.navigate(Screen.TravelHub(conversationId, startTab = "ai")) { launchSingleTop = true }
+                },
+                onOpenHistoryTrip = { conversationId ->
+                    nav.navigate(Screen.TravelHub(conversationId, startTab = "itinerary")) { launchSingleTop = true }
+                },
+                onOpenFavoriteItem = { favorite ->
+                    when {
+                        !favorite.conversationId.isNullOrBlank() && !favorite.nodeId.isNullOrBlank() -> {
+                            nav.navigate(Screen.Chat(favorite.conversationId, nodeId = favorite.nodeId)) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        favorite.category == "hotel" -> nav.navigate(Screen.TravelHotels(id.toString())) { launchSingleTop = true }
+                        favorite.category == "food" -> nav.navigate(Screen.TravelFoods(id.toString())) { launchSingleTop = true }
+                        favorite.category == "activity" -> nav.navigate(Screen.TravelActivities(id.toString())) { launchSingleTop = true }
+                        else -> nav.navigate(Screen.Favorite) { launchSingleTop = true }
+                    }
+                },
             )
         }
     }
@@ -317,7 +425,7 @@ fun TravelRecommendationPage(id: Uuid, title: String, category: TravelRecommenda
                 subtitle = buildRecommendationSubtitle(category, conversation, ui),
             ) {
                 HeaderActionRow(
-                    leftLabel = "返回",
+                    leftLabel = "杩斿洖",
                     rightLabel = "AI",
                     onLeft = { nav.popBackStack() },
                     onRight = { nav.navigate(Screen.TravelHub(id.toString(), startTab = "ai")) },
@@ -343,8 +451,8 @@ fun TravelRecommendationPage(id: Uuid, title: String, category: TravelRecommenda
         item {
             SectionTitle(
                 modifier = Modifier.padding(horizontal = 16.dp),
-                icon = "📌",
-                title = "共找到 ${items.size} 条${categoryDisplayName(category)}",
+                icon = "馃搶",
+                title = "鍏辨壘鍒?${items.size} 鏉?{categoryDisplayName(category)}",
             )
         }
 
@@ -352,8 +460,8 @@ fun TravelRecommendationPage(id: Uuid, title: String, category: TravelRecommenda
             item {
                 EmptyStateCard(
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    title = "还没有真实${categoryDisplayName(category)}数据",
-                    text = if (ui.isLoadingDetails) "正在加载目的地事实数据…" else "先选择目的地，再加载推荐或生成行程。",
+                    title = "No ${categoryDisplayName(category)} data yet",
+                    text = if (ui.isLoadingDetails) "Loading destination facts..." else "Choose a destination first, then load recommendations or generate a plan.",
                 )
             }
         } else {
@@ -401,29 +509,29 @@ private fun recommendationItemsFor(
 }
 
 private fun buildRecommendationPrompt(item: TravelRecommendationItem, category: TravelRecommendationCategory): String = buildString {
-    appendLine("请把这条${categoryDisplayName(category)}建议融入我的旅行计划。")
-    appendLine("名称: ${item.title}")
-    if (item.subtitle.isNotBlank()) appendLine("地址: ${item.subtitle}")
-    if (item.area.isNotBlank()) appendLine("片区: ${item.area}")
-    if (item.priceHint.isNotBlank()) appendLine("价格: ${item.priceHint}")
-    if (item.ratingText.isNotBlank()) appendLine("评分: ${item.ratingText}")
-    if (item.inventoryHint.isNotBlank()) appendLine("营业/库存: ${item.inventoryHint}")
-    if (item.bookingUrl.isNotBlank()) appendLine("链接: ${item.bookingUrl}")
-    append("请更新行程，并说明最适合插入哪一天、哪个时间段。")
+    appendLine("Please merge this ${categoryDisplayName(category)} suggestion into my travel plan.")
+    appendLine("Title: ${item.title}")
+    if (item.subtitle.isNotBlank()) appendLine("Address: ${item.subtitle}")
+    if (item.area.isNotBlank()) appendLine("Area: ${item.area}")
+    if (item.priceHint.isNotBlank()) appendLine("Price: ${item.priceHint}")
+    if (item.ratingText.isNotBlank()) appendLine("Rating: ${item.ratingText}")
+    if (item.inventoryHint.isNotBlank()) appendLine("Availability: ${item.inventoryHint}")
+    if (item.bookingUrl.isNotBlank()) appendLine("Link: ${item.bookingUrl}")
+    append("Update the itinerary and explain the best day and time slot for this item.")
 }
 
 private fun buildBriefSummary(brief: TravelPlanningBrief?): String {
-    if (brief == null) return "告诉我目的地、日期、人数、预算和偏好，我会把真实天气、路线和推荐联动起来。"
+    if (brief == null) return "Tell me destination, dates, traveler count, budget, and preferences."
     return listOf(
         brief.destination.takeIf { it.isNotBlank() },
-        brief.origin.takeIf { it.isNotBlank() }?.let { "从 $it 出发" },
+        brief.origin.takeIf { it.isNotBlank() }?.let { "From $it" },
         brief.dateRange.takeIf { it.isNotBlank() },
-        brief.days?.takeIf { it > 0 }?.let { "$it 天" },
-        brief.travelerCount?.let { "$it 人" },
+        brief.days?.takeIf { it > 0 }?.let { "$it days" },
+        brief.travelerCount?.let { "$it travelers" },
         brief.budgetText.takeIf { it.isNotBlank() } ?: brief.budgetLevel.takeIf { it.isNotBlank() },
         brief.travelStyleTags.takeIf { it.isNotEmpty() }?.joinToString(" / "),
-        brief.transportPreferences.takeIf { it.isNotEmpty() }?.joinToString(" / ")?.let { "交通偏好: $it" },
-    ).filterNotNull().joinToString(" · ").ifBlank { brief.userIntentSummary.ifBlank { "出行信息已准备好。" } }
+        brief.transportPreferences.takeIf { it.isNotEmpty() }?.joinToString(" / ")?.let { "Transport $it" },
+    ).filterNotNull().joinToString(" | ").ifBlank { brief.userIntentSummary.ifBlank { "Trip brief is ready." } }
 }
 
 @Composable
@@ -441,41 +549,75 @@ private fun HomeTab(
     onOpenActivities: () -> Unit,
     onOpenMap: () -> Unit,
     onOpenAi: () -> Unit,
+    onOpenItinerary: () -> Unit,
+    onOpenMine: () -> Unit,
 ) {
-    val plan = conversation.travelPlan
-    val destination = plan?.brief?.destination?.ifBlank { ui.selectedDestination?.name.orEmpty() }
-        ?.ifBlank { ui.selectedDestination?.name.orEmpty() }
-        ?: ui.selectedDestination?.name.orEmpty()
-    val highlightItems = remember(plan, ui.hotels, ui.foods, ui.activities) {
-        buildList {
-            addAll((plan?.hotels ?: ui.hotels).take(1))
-            addAll((plan?.foods ?: ui.foods).take(1))
-            addAll((plan?.activities ?: ui.activities).take(2))
-        }
-    }
-    val nearbyItems = remember(plan, ui.hotels, ui.foods, ui.activities) {
-        ((plan?.activities ?: ui.activities) + (plan?.foods ?: ui.foods) + (plan?.hotels ?: ui.hotels)).distinctBy { it.id }.take(6)
-    }
+    IntegratedHomeTab(
+        modifier = modifier,
+        conversation = conversation,
+        ui = ui,
+        weatherSummary = weatherSummary,
+        onQueryChange = onQueryChange,
+        onSelectSuggestion = onSelectSuggestion,
+        onStartPlanning = onStartPlanning,
+        onGeneratePlan = onGeneratePlan,
+        onOpenHotels = onOpenHotels,
+        onOpenFoods = onOpenFoods,
+        onOpenActivities = onOpenActivities,
+        onOpenMap = onOpenMap,
+        onOpenAi = onOpenAi,
+        onOpenItinerary = onOpenItinerary,
+        onOpenMine = onOpenMine,
+    )
+}
+
+@Composable
+private fun IntegratedHomeTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    ui: TravelHubUiState,
+    weatherSummary: String,
+    onQueryChange: (String) -> Unit,
+    onSelectSuggestion: (TravelSearchSuggestion) -> Unit,
+    onStartPlanning: () -> Unit,
+    onGeneratePlan: () -> Unit,
+    onOpenHotels: () -> Unit,
+    onOpenFoods: () -> Unit,
+    onOpenActivities: () -> Unit,
+    onOpenMap: () -> Unit,
+    onOpenAi: () -> Unit,
+    onOpenItinerary: () -> Unit,
+    onOpenMine: () -> Unit,
+) {
+    val destination = conversation.travelPlan?.brief?.destination?.ifBlank { "Travel Planner" } ?: "Travel Planner"
+    val days = conversation.travelPlan?.itineraryDays.orEmpty()
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().background(TravelBg),
+        modifier = modifier
+            .fillMaxSize()
+            .background(TravelBg),
         contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
             GradientHeader(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                palette = TravelPalette(TravelTeal, Color(0xFF7DDBC7), Color(0xFFE5FAF4), TravelGold),
-                smallTitle = "AI旅行规划师",
-                title = "早上好，旅行家！",
-                subtitle = if (destination.isBlank()) "适合出行 / 先选目的地开始规划" else "${destination.ifBlank { "未选择目的地" }} · ${weatherSummary.ifBlank { "天气联动待刷新" }}",
+                palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE0F8F1), TravelMint),
+                smallTitle = "HOME",
+                title = destination,
+                subtitle = weatherSummary.ifBlank { buildBriefSummary(conversation.travelPlan?.brief) },
             ) {
-                HeaderHintBadge("今天适合出发！")
-                Spacer(Modifier.height(14.dp))
+                HeaderActionRow(
+                    leftLabel = "Me",
+                    rightLabel = "Map",
+                    onLeft = onOpenMine,
+                    onRight = onOpenMap,
+                )
+                Spacer(Modifier.height(12.dp))
                 SearchBox(
                     value = ui.searchQuery,
                     onValueChange = onQueryChange,
-                    placeholder = "搜索目的地、景点、美食…",
+                    placeholder = "Search destination, place, or food",
                 )
                 if (ui.suggestions.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
@@ -484,106 +626,61 @@ private fun HomeTab(
                         onSelectSuggestion = onSelectSuggestion,
                     )
                 }
-                Spacer(Modifier.height(12.dp))
-                HeroStatsRow(
-                    items = listOf(
-                        if (weatherSummary.isBlank()) "天气待同步" else weatherSummary,
-                        if (destination.isBlank()) "目的地未锁定" else destination,
-                        buildBriefSummary(plan?.brief),
-                    ),
-                )
             }
         }
 
         item {
-            SectionTitle(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                icon = "⚡",
-                title = "快速入口",
-            )
-        }
-
-        item {
-            QuickActionGrid(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                actions = listOf(
-                    QuickAction("🍜", "美食推荐", onOpenFoods),
-                    QuickAction("🏨", "住宿预订", onOpenHotels),
-                    QuickAction("🎯", "活动体验", onOpenActivities),
-                    QuickAction("🗺", "探索地图", onOpenMap),
-                ),
-            )
-        }
-
-        item {
-            SectionTitle(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                icon = "📈",
-                title = "热门行程推荐",
-                action = if (highlightItems.isNotEmpty()) "查看地图" else null,
-                onAction = if (highlightItems.isNotEmpty()) onOpenMap else null,
-            )
-        }
-
-        if (highlightItems.isEmpty()) {
-            item {
-                EmptyStateCard(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    title = "还没有真实推荐",
-                    text = if (ui.isLoadingDetails) "正在加载目的地天气、POI 和路线…" else "先搜索目的地，系统会把天气、推荐和地图联动起来。",
-                )
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HomeShortcutChip(label = "Trip", onClick = onOpenItinerary)
+                HomeShortcutChip(label = "Hotels", onClick = onOpenHotels)
+                HomeShortcutChip(label = "Food", onClick = onOpenFoods)
+                HomeShortcutChip(label = "Explore", onClick = onOpenActivities)
+                HomeShortcutChip(label = "AI", onClick = onOpenAi)
             }
-        } else {
-            item {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+        }
+
+        item {
+            Surface(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = Color.White,
+                shape = RoundedCornerShape(24.dp),
+                tonalElevation = 1.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(highlightItems, key = { it.id }) { item ->
-                        FeaturedRecommendationCard(
-                            item = item,
-                            modifier = Modifier.width(258.dp),
-                        )
-                    }
+                    Text("Weather", fontWeight = FontWeight.ExtraBold)
+                    Text(weatherSummary.ifBlank { "Weather is syncing." }, color = TravelTextMuted)
                 }
             }
         }
 
-        item {
-            SectionTitle(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                icon = "📍",
-                title = "附近发现",
-            )
-        }
-
-        if (ui.errorMessage != null) {
+        if (days.isNotEmpty()) {
             item {
-                InfoBanner(
+                CurrentTripCard(
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    title = "外部数据加载异常",
-                    text = ui.errorMessage,
-                    tone = Color(0xFFFFF2E8),
+                    title = destination,
+                    subtitle = conversation.travelPlan?.toTravelSummaryText().orEmpty(),
+                    onClick = onOpenItinerary,
                 )
             }
-        }
-
-        items(nearbyItems, key = { it.id }) { item ->
-            NearbyRecommendationRow(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                item = item,
-            )
         }
 
         item {
             AssistantCtaCard(
                 modifier = Modifier.padding(horizontal = 16.dp),
-                title = "AI行程助手准备就绪",
-                text = "告诉我你的旅行梦想，我来帮你规划完整行程！",
-                primaryLabel = "生成计划",
-                secondaryLabel = "开始填写",
+                title = if (days.isEmpty()) "Start a new trip" else "Keep refining this trip",
+                text = "Use AI to build itinerary, weather-aware routes, hotels, food, and exploration suggestions.",
+                primaryLabel = if (days.isEmpty()) "Generate" else "Replan",
+                secondaryLabel = "Open AI",
                 onPrimary = onGeneratePlan,
-                onSecondary = onStartPlanning,
+                onSecondary = onOpenAi,
             )
         }
 
@@ -591,12 +688,34 @@ private fun HomeTab(
             ActionStrip(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 actions = listOf(
-                    "打开地图" to onOpenMap,
-                    "进入 AI" to onOpenAi,
-                    "重填需求" to onStartPlanning,
+                    "Map" to onOpenMap,
+                    "Trip" to onOpenItinerary,
+                    "Planner" to onStartPlanning,
+                    "AI" to onOpenAi,
                 ),
             )
         }
+    }
+}
+
+@Composable
+private fun HomeShortcutChip(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        color = Color(0xFFF8FAFC),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            color = Color(0xFF4B5563),
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 
@@ -612,12 +731,10 @@ private fun MapTab(
     onSelectFilter: (String) -> Unit,
 ) {
     val nav = LocalNavController.current
-    var isMapExpanded by rememberSaveable(conversation.id.toString()) {
-        mutableStateOf(false)
-    }
     var activePoiId by rememberSaveable(conversation.id.toString(), highlightPoiId) {
         mutableStateOf(highlightPoiId)
     }
+
     LaunchedEffect(mapPois.map { it.id }, activePoiId, highlightPoiId) {
         if (mapPois.isEmpty()) {
             activePoiId = null
@@ -625,117 +742,37 @@ private fun MapTab(
             activePoiId = highlightPoiId?.takeIf { target -> mapPois.any { it.id == target } } ?: mapPois.first().id
         }
     }
-    if (isMapExpanded) {
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .background(TravelBg)
-                .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                TinyActionButton("← 返回", onClick = { isMapExpanded = false }, enabled = true)
-                Text(
-                    text = conversation.travelPlan?.brief?.destination?.ifBlank { "地图" } ?: "地图",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = TravelTealDeep,
-                    fontWeight = FontWeight.Bold,
-                )
-                SmallStatusPill(text = "全屏", color = TravelTealDeep)
-            }
-            MapSearchControls(
-                ui = ui,
-                onQueryChange = onQueryChange,
-                onSelectSuggestion = onSelectSuggestion,
-                onSelectFilter = onSelectFilter,
-            )
-            MapViewport(
-                modifier = Modifier.weight(1f),
-                nav = nav,
-                mapPois = mapPois,
-                activePoiId = activePoiId,
-                expandLabel = null,
-                onExpandToggle = null,
-            )
-            if (mapPois.isNotEmpty()) {
-                MapPoiCarousel(
-                    mapPois = mapPois,
-                    activePoiId = activePoiId,
-                    onSelectPoi = { activePoiId = it },
-                )
-            }
-        }
-    } else {
+
     Column(
-        modifier = modifier.fillMaxSize().background(TravelBg),
+        modifier = modifier
+            .fillMaxSize()
+            .background(TravelBg),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        if (false) GradientHeader(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            palette = TravelPalette(Color(0xFF9EDFD2), Color(0xFFD9F8EE), Color(0xFFEFFCF7), TravelTealDeep),
-            smallTitle = "探索地图",
-            title = conversation.travelPlan?.brief?.destination?.ifBlank { "旅行地图" } ?: "旅行地图",
-            subtitle = "真实 POI、路线与行程联动",
-        ) {
-            SearchBox(
-                value = ui.searchQuery,
-                onValueChange = onQueryChange,
-                placeholder = "搜索地点…",
-            )
-            if (ui.suggestions.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
-                SuggestionCard(
-                    suggestions = ui.suggestions,
-                    onSelectSuggestion = onSelectSuggestion,
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            ChipRow(
-                chips = listOf("住宿", "美食", "活动", "路线"),
-                selected = mapFilterLabel(ui.selectedMapFilter),
-                onSelect = { label -> onSelectFilter(mapFilterValue(label)) },
-            )
-        }
-
         Surface(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-            color = Color.White.copy(alpha = 0.96f),
-            shape = RoundedCornerShape(22.dp),
-            tonalElevation = 2.dp,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            color = Color.White,
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 1.dp,
         ) {
             Column(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Map", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            text = "探索地图",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TravelTealDeep,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = conversation.travelPlan?.brief?.destination?.ifBlank { "旅行地图" } ?: "旅行地图",
-                            style = MaterialTheme.typography.bodySmall,
+                            conversation.travelPlan?.brief?.destination?.ifBlank { "Travel map" } ?: "Travel map",
                             color = TravelTextMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    TinyActionButton("全屏", onClick = { isMapExpanded = true }, enabled = true)
+                    SmallStatusPill(text = "Live", color = TravelTealDeep)
                 }
                 MapSearchControls(
                     ui = ui,
@@ -746,91 +783,25 @@ private fun MapTab(
             }
         }
 
-        Box(
+        MapViewport(
             modifier = Modifier
-                .weight(1.8f)
-                .fillMaxWidth()
+                .weight(1f)
                 .padding(horizontal = 12.dp),
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = Color.White,
-                shape = RoundedCornerShape(28.dp),
-                tonalElevation = 2.dp,
-            ) {
-                ChatMapDrawerContent(
-                    modifier = Modifier.fillMaxSize(),
-                    travelPois = mapPois,
-                    highlightPoiId = activePoiId,
-                    showBottomPanel = false,
-                    onOpenInternalWebView = { url -> nav.navigate(Screen.WebView(url = url)) },
-                )
-            }
+            nav = nav,
+            mapPois = mapPois,
+            activePoiId = activePoiId,
+            showBottomPanel = false,
+            expandLabel = null,
+            onExpandToggle = null,
+        )
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 14.dp, end = 14.dp),
-            ) {
-                TinyActionButton("放大", onClick = { isMapExpanded = true }, enabled = true)
-            }
-
-            if (mapPois.isNotEmpty()) {
-                MapPoiCarousel(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 6.dp),
-                    mapPois = mapPois,
-                    activePoiId = activePoiId,
-                    onSelectPoi = { activePoiId = it },
-                )
-            }
-
-            if (mapPois.isEmpty()) {
-                EmptyStateCard(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp),
-                    title = "地图上还没有 POI",
-                    text = "搜索地点或先生成行程，系统会把推荐点位同步到地图。",
-                )
-            }
+        if (mapPois.isNotEmpty()) {
+            MapPoiCarousel(
+                mapPois = mapPois,
+                activePoiId = activePoiId,
+                onSelectPoi = { activePoiId = it },
+            )
         }
-
-        if (false && mapPois.isNotEmpty()) {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(mapPois, key = { it.id }) { poi ->
-                    Surface(
-                        modifier = Modifier
-                            .width(210.dp)
-                            .clickable { activePoiId = poi.id },
-                        color = Color.White,
-                        shape = RoundedCornerShape(20.dp),
-                        tonalElevation = 1.dp,
-                        border = if (activePoiId == poi.id) androidx.compose.foundation.BorderStroke(1.5.dp, TravelTeal) else null,
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(poi.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                text = listOf(poi.category, poi.address).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "等待更多地图详情" },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TravelTextMuted,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
     }
 }
 
@@ -844,7 +815,7 @@ private fun MapSearchControls(
     SearchBox(
         value = ui.searchQuery,
         onValueChange = onQueryChange,
-        placeholder = "搜索地点、景点或美食",
+        placeholder = "Search place, POI, or food",
     )
     if (ui.suggestions.isNotEmpty()) {
         Spacer(Modifier.height(10.dp))
@@ -855,7 +826,7 @@ private fun MapSearchControls(
     }
     Spacer(Modifier.height(12.dp))
     ChipRow(
-        chips = listOf("住宿", "美食", "活动", "路线"),
+        chips = listOf("Hotel", "Food", "Activity", "Route"),
         selected = mapFilterLabel(ui.selectedMapFilter),
         onSelect = { label -> onSelectFilter(mapFilterValue(label)) },
     )
@@ -871,10 +842,7 @@ private fun MapViewport(
     expandLabel: String? = null,
     onExpandToggle: (() -> Unit)? = null,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth(),
-    ) {
+    Box(modifier = modifier.fillMaxWidth()) {
         Surface(
             modifier = Modifier.fillMaxSize(),
             color = Color.White,
@@ -905,8 +873,8 @@ private fun MapViewport(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(16.dp),
-                title = "地图上还没有 POI",
-                text = "先搜索目的地或生成行程，地图会同步展示当前可用点位。",
+                title = "No POI on map yet",
+                text = "Search a destination or generate an itinerary first. POIs will sync to the map here.",
             )
         }
     }
@@ -938,17 +906,9 @@ private fun MapPoiCarousel(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    Text(text = poi.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(
-                        text = poi.name,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = listOf(poi.category, poi.address)
-                            .filter { it.isNotBlank() }
-                            .joinToString(" 路 ")
-                            .ifBlank { "等待更多地图详情" },
+                        text = listOf(poi.category, poi.address).filter { it.isNotBlank() }.joinToString(" | ").ifBlank { "Waiting for more map details" },
                         style = MaterialTheme.typography.bodySmall,
                         color = TravelTextMuted,
                         maxLines = 2,
@@ -961,14 +921,18 @@ private fun MapPoiCarousel(
 }
 
 @Composable
-private fun ItineraryTab(
+private fun IntegratedItineraryTab(
     modifier: Modifier,
     conversation: Conversation,
     onStartPlanning: () -> Unit,
     onOpenAi: () -> Unit,
+    onOpenMap: () -> Unit,
+    onExportTrip: () -> Unit,
+    onShareTrip: () -> Unit,
 ) {
     val plan = conversation.travelPlan
     val days = plan?.itineraryDays.orEmpty()
+    val destination = plan?.brief?.destination?.ifBlank { "My Trip" } ?: "My Trip"
     var selectedDayIndex by rememberSaveable(conversation.id.toString()) {
         mutableStateOf(days.firstOrNull()?.dayIndex ?: 1)
     }
@@ -982,7 +946,9 @@ private fun ItineraryTab(
     val selectedDay = days.firstOrNull { it.dayIndex == selectedDayIndex } ?: days.firstOrNull()
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().background(TravelBg),
+        modifier = modifier
+            .fillMaxSize()
+            .background(TravelBg),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -990,32 +956,24 @@ private fun ItineraryTab(
             GradientHeader(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE1F8F2), TravelGold),
-                smallTitle = "行程规划",
-                title = plan?.brief?.destination?.ifBlank { "我的行程" } ?: "我的行程",
+                smallTitle = "ITINERARY",
+                title = destination,
                 subtitle = buildBriefSummary(plan?.brief),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = selectedDay?.title?.ifBlank { "Day ${selectedDay?.dayIndex ?: 1}" } ?: "等待生成行程",
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = selectedDay?.dateText?.ifBlank { "真实天气与路线会同步写入" }
-                                ?: "生成完成后会显示真实天气与路线约束",
-                            color = Color.White.copy(alpha = 0.92f),
-                        )
-                    }
-                    HeaderHintBadge(
-                        text = travelPlanningStateLabel(conversation.travelPlanningState),
-                    )
-                }
+                HeroStatsRow(
+                    listOf(
+                        "${(plan?.brief?.days ?: days.size).coerceAtLeast(days.size)} days",
+                        if (plan?.pois.isNullOrEmpty()) "POI pending" else "${plan?.pois.orEmpty().size} POIs",
+                        travelPlanningStateLabel(conversation.travelPlanningState),
+                    ),
+                )
+                Spacer(Modifier.height(12.dp))
+                HeaderActionRow(
+                    leftLabel = "Ask AI",
+                    rightLabel = "Map",
+                    onLeft = onOpenAi,
+                    onRight = onOpenMap,
+                )
             }
         }
 
@@ -1023,15 +981,26 @@ private fun ItineraryTab(
             item {
                 AssistantCtaCard(
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    title = "还没有详细行程",
-                    text = "选好目的地后点击生成，系统会把真实天气和路线提示写进每一天。",
-                    primaryLabel = "立即生成",
-                    secondaryLabel = "打开 AI",
+                    title = "No detailed itinerary yet",
+                    text = "Add destination and preferences first, then generate daily schedule, weather hints, and route suggestions.",
+                    primaryLabel = "Generate now",
+                    secondaryLabel = "Open AI",
                     onPrimary = onStartPlanning,
                     onSecondary = onOpenAi,
                 )
             }
         } else {
+            item {
+                ItineraryPreviewCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    destination = destination,
+                    day = selectedDay,
+                    planningState = travelPlanningStateLabel(conversation.travelPlanningState),
+                    onOpenMap = onOpenMap,
+                    onStartPlanning = onStartPlanning,
+                )
+            }
+
             item {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
@@ -1039,7 +1008,7 @@ private fun ItineraryTab(
                 ) {
                     items(days, key = { it.dayIndex }) { day ->
                         DayChip(
-                            title = "Day${day.dayIndex}",
+                            title = "Day ${day.dayIndex}",
                             selected = day.dayIndex == selectedDayIndex,
                             onClick = { selectedDayIndex = day.dayIndex },
                         )
@@ -1070,27 +1039,152 @@ private fun ItineraryTab(
                     )
                 }
             }
+
+            item {
+                ActionStrip(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    actions = listOf(
+                        "Replan" to onStartPlanning,
+                        "Export" to onExportTrip,
+                        "Share" to onShareTrip,
+                        "Map" to onOpenMap,
+                        "AI" to onOpenAi,
+                    ),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun AiTab(
+private fun ItineraryPreviewCard(
+    modifier: Modifier = Modifier,
+    destination: String,
+    day: TravelItineraryDay?,
+    planningState: String,
+    onOpenMap: () -> Unit,
+    onStartPlanning: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(26.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = destination,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                    Text(
+                        text = day?.title?.ifBlank { "Day ${day.dayIndex}" } ?: "Waiting for itinerary preview",
+                        color = TravelTextMuted,
+                    )
+                }
+                SmallStatusPill(text = planningState, color = TravelTealDeep)
+            }
+
+            Surface(
+                color = Color(0xFFF8FCFB),
+                shape = RoundedCornerShape(22.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, TravelLine),
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = day?.dateText?.ifBlank { "Weather and timing aligned" }
+                            ?: "Generated plan will automatically include weather and timing guidance.",
+                        color = TravelTextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    day?.items?.take(4)?.forEachIndexed { index, item ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "${index + 1}. ${item.title}",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            val detail = listOf(
+                                item.timeSlot.takeIf { it.isNotBlank() },
+                                item.description.takeIf { it.isNotBlank() },
+                            ).filterNotNull().joinToString(" | ")
+                            if (detail.isNotBlank()) {
+                                Text(
+                                    text = detail,
+                                    color = TravelTextMuted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    if (day?.items.isNullOrEmpty()) {
+                        Text(
+                            text = "No detailed activities for this day yet. Replan or continue filling details in AI.",
+                            color = TravelTextMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onStartPlanning,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
+                ) {
+                    Text("Replan")
+                }
+                Button(
+                    onClick = onOpenMap,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = TravelOrange),
+                ) {
+                    Text("View map")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IntegratedAiTab(
     modifier: Modifier,
     vm: ChatVM,
     conversation: Conversation,
     nodeId: Uuid?,
     onOpenItinerary: () -> Unit,
+    onOpenMap: () -> Unit,
+    onOpenHotels: () -> Unit,
+    onOpenFoods: () -> Unit,
+    onOpenActivities: () -> Unit,
 ) {
     var input by rememberSaveable(conversation.id.toString()) { mutableStateOf("") }
     val listState = rememberLazyListState()
     ImeLazyListAutoScroller(listState)
     val focusNode = nodeId?.let { target -> conversation.currentMessages.firstOrNull { it.id == target } }
     val shortcutPrompts = listOf(
-        "推荐景点",
-        "美食推荐",
-        "住宿建议",
-        "优化今天行程",
+        "Spots" to "Recommend the best places to visit today for my current destination.",
+        "Food" to "Recommend nearby food options that fit my current destination and plan.",
+        "Stay" to "Suggest a better accommodation option based on my current itinerary.",
+        "Optimize today" to "Optimize today's itinerary with a more reasonable route and schedule.",
     )
 
     LaunchedEffect(conversation.currentMessages.size) {
@@ -1105,45 +1199,92 @@ private fun AiTab(
             .fillMaxSize()
             .background(TravelBg)
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        GradientHeader(
-            modifier = Modifier.fillMaxWidth(),
-            palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE0F8F1), TravelMint),
-            smallTitle = "🦒 小吉",
-            title = "AI旅行助手",
-            subtitle = buildBriefSummary(conversation.travelPlan?.brief),
+        Surface(
+            color = Color.White,
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 1.dp,
         ) {
-            HeaderActionRow(
-                leftLabel = "返回行程",
-                rightLabel = travelPlanningStateLabel(conversation.travelPlanningState),
-                onLeft = onOpenItinerary,
-                onRight = {},
-                rightEnabled = false,
-            )
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(TravelTeal, TravelBlue, Color(0xFFA855F7)),
+                                    ),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("AI", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("OASIS AI", fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                text = buildBriefSummary(conversation.travelPlan?.brief),
+                                color = TravelTextMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    SmallStatusPill(
+                        text = travelPlanningStateLabel(conversation.travelPlanningState),
+                        color = TravelTealDeep,
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    HomeShortcutChip(label = "Itinerary", onClick = onOpenItinerary)
+                    HomeShortcutChip(label = "Map", onClick = onOpenMap)
+                    HomeShortcutChip(label = "Hotels", onClick = onOpenHotels)
+                    HomeShortcutChip(label = "Food", onClick = onOpenFoods)
+                    HomeShortcutChip(label = "Explore", onClick = onOpenActivities)
+                }
+            }
         }
 
         if (focusNode != null) {
             InfoBanner(
-                title = "当前聚焦消息",
+                title = "Focused message",
                 text = focusNode.toText(),
                 tone = Color(0xFFE8F8F3),
             )
         }
 
-        ChipRow(
-            chips = shortcutPrompts,
-            selected = null,
-            onSelect = { prompt ->
-                val realPrompt = when (prompt) {
-                    "推荐景点" -> "请根据我当前目的地推荐今天最值得去的景点。"
-                    "美食推荐" -> "请根据我当前目的地推荐附近最值得吃的美食。"
-                    "住宿建议" -> "请根据我当前目的地推荐更适合我的住宿方案。"
-                    else -> "请优化今天的旅行行程，补充更合理的路线和时间安排。"
-                }
-                sendTravelAiPrompt(vm, conversation, realPrompt)
-            },
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            shortcutPrompts.forEach { (label, prompt) ->
+                HomeShortcutChip(
+                    label = label,
+                    onClick = { sendTravelAiPrompt(vm, conversation, prompt) },
+                )
+            }
+        }
 
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -1154,38 +1295,12 @@ private fun AiTab(
             items(conversation.currentMessages, key = { it.id.toString() }) { message ->
                 val isUser = message.role == MessageRole.USER
                 val textContent = message.toText().ifBlank {
-                    if (isUser) "(空消息)" else "(非文本消息)"
+                    if (isUser) "(empty message)" else "(non-text message)"
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
-                ) {
-                    Surface(
-                        modifier = Modifier.width(280.dp),
-                        color = if (isUser) Color(0xFFDFF7F1) else Color.White,
-                        shape = RoundedCornerShape(24.dp),
-                        tonalElevation = 1.dp,
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                text = if (isUser) "你" else "小吉",
-                                color = TravelTealDeep,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            if (isUser) {
-                                Text(text = textContent)
-                            } else {
-                                MarkdownBlock(
-                                    content = textContent,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        }
-                    }
+                if (isUser) {
+                    UserChatBubble(text = textContent)
+                } else {
+                    AssistantChatBubble(text = textContent)
                 }
             }
         }
@@ -1195,7 +1310,7 @@ private fun AiTab(
                 .imePadding()
                 .navigationBarsPadding(),
             color = Color.White,
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(28.dp),
             tonalElevation = 1.dp,
         ) {
             Column(
@@ -1206,9 +1321,9 @@ private fun AiTab(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.fillMaxWidth(),
-                    minLines = 3,
-                    placeholder = { Text("问问小吉吧…") },
-                    shape = RoundedCornerShape(18.dp),
+                    minLines = 2,
+                    placeholder = { Text("Enter destination, constraints, or what you want to adjust...") },
+                    shape = RoundedCornerShape(20.dp),
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(
@@ -1220,14 +1335,14 @@ private fun AiTab(
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
                     ) {
-                        Text("发送")
+                        Text("Send")
                     }
                     Button(
                         onClick = { vm.generateTravelPlan() },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = TravelOrange),
                     ) {
-                        Text("生成行程")
+                        Text("Generate plan")
                     }
                 }
             }
@@ -1236,24 +1351,93 @@ private fun AiTab(
 }
 
 @Composable
-private fun MineTab(
+private fun AssistantChatBubble(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 6.dp, end = 8.dp)
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(TravelTeal, TravelBlue, Color(0xFFA855F7)),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "AI",
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+            )
+        }
+        Surface(
+            modifier = Modifier.width(292.dp),
+            color = Color.White,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 6.dp),
+            tonalElevation = 1.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDF0EA)),
+        ) {
+            MarkdownBlock(
+                content = text,
+                modifier = Modifier.padding(14.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun UserChatBubble(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(292.dp)
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp))
+                .background(Brush.linearGradient(listOf(TravelTeal, TravelBlueDeep)))
+                .padding(14.dp),
+        ) {
+            Text(text = text, color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun ProfileIntegratedMineTab(
     modifier: Modifier,
     conversation: Conversation,
+    historyConversationCount: Int,
+    historyConversations: List<TravelHistoryConversationSummary>,
+    historyTrips: List<TravelHistoryTripSummary>,
+    favoriteItems: List<TravelFavoriteSummary>,
+    currentTripSummary: TravelCurrentTripSummary?,
     onOpenCurrentTrip: () -> Unit,
+    onOpenHistoryConversation: (String) -> Unit,
+    onOpenHistoryTrip: (String) -> Unit,
+    onOpenFavoriteItem: (TravelFavoriteSummary) -> Unit,
 ) {
     val plan = conversation.travelPlan
     val nav = LocalNavController.current
     val context = LocalContext.current
-    val destination = plan?.brief?.destination?.ifBlank { "旅行中" } ?: "旅行中"
+    val destination = plan?.brief?.destination?.ifBlank { "Traveling" } ?: "Traveling"
     val stats = listOf(
-        "旅行次数" to "${plan?.itineraryDays.orEmpty().size.coerceAtLeast(1)}",
-        "去过城市" to if (destination.isBlank()) "0" else "1",
-        "获得勋章" to "${plan?.foods.orEmpty().size + plan?.activities.orEmpty().size}",
-        "旅行照片" to "${plan?.pois.orEmpty().size}",
+        "History" to historyConversationCount.toString(),
+        "Favorites" to favoriteItems.size.toString(),
+        "Days" to (plan?.brief?.days ?: plan?.itineraryDays.orEmpty().size).toString(),
     )
+    var profileTab by rememberSaveable(conversation.id.toString()) { mutableStateOf("history") }
 
     LazyColumn(
-        modifier = modifier.fillMaxSize().background(TravelBg),
+        modifier = modifier
+            .fillMaxSize()
+            .background(TravelBg),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -1261,62 +1445,181 @@ private fun MineTab(
             GradientHeader(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE0F7F1), TravelGold),
-                smallTitle = "个人中心",
-                title = "旅行者小明",
-                subtitle = "$destination · 旅行达人",
+                smallTitle = "PROFILE",
+                title = "Traveler",
+                subtitle = "$destination | native integrated page",
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    stats.forEach { (label, value) ->
-                        MiniStatCard(
-                            modifier = Modifier.weight(1f),
-                            label = label,
-                            value = value,
-                        )
-                    }
-                }
+                HeroStatsRow(stats.map { "${it.first} ${it.second}" })
+                Spacer(Modifier.height(12.dp))
+                HeaderActionRow(
+                    leftLabel = "Settings",
+                    rightLabel = "More",
+                    onLeft = { nav.navigate(Screen.Setting) },
+                    onRight = { nav.navigate(Screen.SettingAbout) },
+                )
             }
         }
 
-        if (plan != null) {
+        if (currentTripSummary != null) {
             item {
                 CurrentTripCard(
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    title = plan.brief?.destination?.ifBlank { "当前行程" } ?: "当前行程",
-                    subtitle = buildBriefSummary(plan.brief),
+                    title = currentTripSummary.title,
+                    subtitle = currentTripSummary.summary,
                     onClick = onOpenCurrentTrip,
                 )
             }
         }
 
         item {
-            SectionTitle(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                icon = "🧳",
-                title = "旅行资产",
-            )
-        }
-
-        item {
             Surface(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 color = Color.White,
-                shape = RoundedCornerShape(26.dp),
+                shape = RoundedCornerShape(24.dp),
                 tonalElevation = 1.dp,
             ) {
-                Column {
-                    MineRow("我的收藏", "${plan?.pois.orEmpty().size} 个地点", enabled = true, onClick = { nav.navigate(Screen.Favorite) })
-                    MineRow("历史行程", "${plan?.itineraryDays.orEmpty().size} 天", enabled = true, onClick = { nav.navigate(Screen.History) })
-                    MineRow(
-                        "旅行相册",
-                        "${(plan?.hotels.orEmpty().size + plan?.foods.orEmpty().size + plan?.activities.orEmpty().size)} 条记录",
-                        enabled = false,
-                        onClick = { Toast.makeText(context, "旅行相册功能待接入", Toast.LENGTH_SHORT).show() },
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ProfileTabButton(
+                        modifier = Modifier.weight(1f),
+                        label = "History",
+                        selected = profileTab == "history",
+                        onClick = { profileTab = "history" },
                     )
-                    MineRow("系统设置", "账号与隐私", enabled = true, onClick = { nav.navigate(Screen.Setting) })
-                    MineRow("帮助中心", "常见问题", enabled = true, onClick = { nav.navigate(Screen.SettingAbout) })
+                    ProfileTabButton(
+                        modifier = Modifier.weight(1f),
+                        label = "Favorites",
+                        selected = profileTab == "favorites",
+                        onClick = { profileTab = "favorites" },
+                    )
+                }
+            }
+        }
+
+        if (profileTab == "history") {
+            item {
+                SectionTitle(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    icon = "H",
+                    title = "History conversations",
+                    action = "All",
+                    onAction = { nav.navigate(Screen.History) },
+                )
+            }
+
+            if (historyConversations.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        title = "No history conversations yet",
+                        text = "After you finish a travel plan, recent sessions, resumable itineraries, and favorite entries will appear here.",
+                    )
+                }
+            } else {
+                historyConversations.forEach { historyConversation ->
+                    item {
+                        HistoryConversationCard(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            item = historyConversation,
+                            onClick = { onOpenHistoryConversation(historyConversation.id) },
+                        )
+                    }
+                }
+            }
+
+            if (historyTrips.isNotEmpty()) {
+                item {
+                    SectionTitle(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        icon = "T",
+                        title = "History trips",
+                    )
+                }
+                historyTrips.forEach { historyTrip ->
+                    item {
+                        HistoryTripCard(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            item = historyTrip,
+                            onClick = { onOpenHistoryTrip(historyTrip.conversationId) },
+                        )
+                    }
+                }
+            }
+
+            item {
+                ProfileActionEntry(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "Travel preferences",
+                    subtitle = "Account, preferences, and default rules",
+                    onClick = { nav.navigate(Screen.Setting) },
+                )
+            }
+        } else {
+            item {
+                SectionTitle(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    icon = "F",
+                    title = "Favorites",
+                    action = "Manage",
+                    onAction = { nav.navigate(Screen.Favorite) },
+                )
+            }
+
+            if (favoriteItems.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        title = "No favorites yet",
+                        text = "After generating an itinerary, you can keep favorites from hotels, food, activities, or message nodes.",
+                    )
+                }
+            } else {
+                favoriteItems.groupBy { it.category }.forEach { (category, itemsForCategory) ->
+                    item {
+                        SectionTitle(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            icon = when (category) {
+                                "hotel" -> "H"
+                                "food" -> "F"
+                                "activity" -> "A"
+                                else -> "*"
+                            },
+                            title = category.ifBlank { "other" },
+                        )
+                    }
+                    itemsForCategory.forEach { favoriteItem ->
+                        item {
+                            FavoriteSummaryCard(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                item = favoriteItem,
+                                onClick = { onOpenFavoriteItem(favoriteItem) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = Color.White,
+                    shape = RoundedCornerShape(26.dp),
+                    tonalElevation = 1.dp,
+                ) {
+                    Column {
+                        MineRow("My favorites", "${favoriteItems.size} items", enabled = true, onClick = { nav.navigate(Screen.Favorite) })
+                        MineRow("History sessions", "$historyConversationCount items", enabled = true, onClick = { nav.navigate(Screen.History) })
+                        MineRow(
+                            "System settings",
+                            "Account and privacy",
+                            enabled = true,
+                            onClick = { nav.navigate(Screen.Setting) },
+                        )
+                    }
                 }
             }
         }
@@ -1325,19 +1628,115 @@ private fun MineTab(
             Surface(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .clickable { Toast.makeText(context, "退出登录功能待接入", Toast.LENGTH_SHORT).show() },
+                    .clickable { Toast.makeText(context, "Logout is not connected yet", Toast.LENGTH_SHORT).show() },
                 color = Color(0xFFEFF9F5),
                 shape = RoundedCornerShape(22.dp),
             ) {
                 Text(
-                    text = "退出登录",
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                    text = "Logout",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 18.dp),
                     color = TravelTealDeep,
                     fontWeight = FontWeight.Bold,
                 )
             }
         }
     }
+}
+
+@Composable
+private fun ProfileTabButton(
+    modifier: Modifier = Modifier,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = if (selected) TravelTeal else Color(0xFFF8FAFC),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = if (selected) 1.dp else 0.dp,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(vertical = 12.dp),
+            color = if (selected) Color.White else Color(0xFF4B5563),
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun ProfileActionEntry(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(text = title, fontWeight = FontWeight.Bold)
+            Text(text = subtitle, color = TravelTextMuted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+@Composable
+private fun LegacyItineraryTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    onStartPlanning: () -> Unit,
+    onOpenAi: () -> Unit,
+    onExportTrip: () -> Unit,
+    onShareTrip: () -> Unit,
+) {
+    Box(modifier = modifier.fillMaxSize())
+}
+
+@Composable
+private fun LegacyAiTab(
+    modifier: Modifier,
+    vm: ChatVM,
+    conversation: Conversation,
+    nodeId: Uuid?,
+    onOpenItinerary: () -> Unit,
+) {
+    Box(modifier = modifier.fillMaxSize())
+}
+
+@Composable
+private fun LegacyIntegratedMineTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    historyConversationCount: Int,
+    historyConversations: List<TravelHistoryConversationSummary>,
+    historyTrips: List<TravelHistoryTripSummary>,
+    favoriteItems: List<TravelFavoriteSummary>,
+    currentTripSummary: TravelCurrentTripSummary?,
+    onOpenCurrentTrip: () -> Unit,
+    onOpenHistoryConversation: (String) -> Unit,
+    onOpenHistoryTrip: (String) -> Unit,
+    onOpenFavoriteItem: (TravelFavoriteSummary) -> Unit,
+) {
+    Box(modifier = modifier.fillMaxSize())
+}
+
+@Composable
+private fun MineTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    onOpenCurrentTrip: () -> Unit,
+) {
+    Box(modifier = modifier.fillMaxSize())
 }
 
 @Composable
@@ -1492,12 +1891,12 @@ private fun SuggestionCard(
                         .padding(vertical = 10.dp),
                 ) {
                     Text(
-                        text = suggestion.name.ifBlank { "未命名地点" },
+                        text = suggestion.name.ifBlank { "Unnamed place" },
                         fontWeight = FontWeight.Bold,
                     )
                     val subtitle = listOf(suggestion.district, suggestion.address)
                         .filter { it.isNotBlank() }
-                        .joinToString(" · ")
+                        .joinToString(" 路 ")
                     if (subtitle.isNotBlank()) {
                         Text(
                             text = subtitle,
@@ -1648,7 +2047,7 @@ private fun FeaturedRecommendationCard(item: TravelRecommendationItem, modifier:
                 Text(item.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 val subtitle = listOf(item.area.takeIf { it.isNotBlank() }, item.subtitle.takeIf { it.isNotBlank() })
                     .filterNotNull()
-                    .joinToString(" · ")
+                    .joinToString(" 路 ")
                 if (subtitle.isNotBlank()) {
                     Text(subtitle, color = TravelTextMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
@@ -1688,14 +2087,14 @@ private fun NearbyRecommendationRow(modifier: Modifier = Modifier, item: TravelR
                         item.priceHint.takeIf { it.isNotBlank() },
                         item.ratingText.takeIf { it.isNotBlank() },
                         item.inventoryHint.takeIf { it.isNotBlank() },
-                    ).filterNotNull().joinToString(" · ").ifBlank { item.subtitle.ifBlank { "等待更多地点详情" } },
+                    ).filterNotNull().joinToString(" 路 ").ifBlank { item.subtitle.ifBlank { "绛夊緟鏇村鍦扮偣璇︽儏" } },
                     color = TravelTextMuted,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text("›", style = MaterialTheme.typography.headlineSmall, color = TravelTextMuted)
+            Text(">", style = MaterialTheme.typography.headlineSmall, color = TravelTextMuted)
         }
     }
 }
@@ -1727,7 +2126,7 @@ private fun AssistantCtaCard(
                     .background(Color(0xFFC9EFE5)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("🦒")
+                Text("馃")
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
@@ -1810,7 +2209,7 @@ private fun RecommendationListingCard(
                     color = Color.White,
                     shape = CircleShape,
                 ) {
-                    Text("♡", modifier = Modifier.padding(10.dp))
+                    Text("Fav", modifier = Modifier.padding(10.dp))
                 }
                 if (item.reason.isNotBlank()) {
                     Text(
@@ -1842,14 +2241,14 @@ private fun RecommendationListingCard(
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
                     ) {
-                        Text("地图查看")
+                        Text("鍦板浘鏌ョ湅")
                     }
                     Button(
                         onClick = onAskAi,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
                     ) {
-                        Text("融入行程")
+                        Text("铻嶅叆琛岀▼")
                     }
                     if (item.bookingUrl.isNotBlank()) {
                         Button(
@@ -1857,7 +2256,7 @@ private fun RecommendationListingCard(
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.buttonColors(containerColor = TravelOrange),
                         ) {
-                            Text("去查看")
+                            Text("Open")
                         }
                     }
                 }
@@ -1874,7 +2273,7 @@ private fun RecommendationMetaText(item: TravelRecommendationItem) {
         item.priceHint.takeIf { it.isNotBlank() },
         item.inventoryHint.takeIf { it.isNotBlank() },
         item.source.takeIf { it.isNotBlank() },
-    ).filterNotNull().joinToString(" · ")
+    ).filterNotNull().joinToString(" 路 ")
     if (meta.isNotBlank()) {
         Text(
             text = meta,
@@ -2003,8 +2402,8 @@ private fun DayTimelineCard(modifier: Modifier = Modifier, day: TravelItineraryD
             Text(
                 text = listOf(day.dateText.takeIf { it.isNotBlank() }, day.weatherHint.takeIf { it.isNotBlank() })
                     .filterNotNull()
-                    .joinToString(" · ")
-                    .ifBlank { "真实天气会写在这里" },
+                    .joinToString(" 路 ")
+                    .ifBlank { "Weather details will appear here." },
                 color = TravelTextMuted,
             )
             day.items.forEachIndexed { index, item ->
@@ -2095,7 +2494,7 @@ private fun WeatherStrip(modifier: Modifier = Modifier, days: List<TravelItinera
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("本周天气", fontWeight = FontWeight.Bold)
+            Text("鏈懆澶╂皵", fontWeight = FontWeight.Bold)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2115,12 +2514,12 @@ private fun WeatherStrip(modifier: Modifier = Modifier, days: List<TravelItinera
 private fun AiAdviceCard(modifier: Modifier = Modifier, day: TravelItineraryDay, onOpenAi: () -> Unit) {
     val transportHint = day.items.firstNotNullOfOrNull { it.transportHint.takeIf(String::isNotBlank) }
     val summary = buildString {
-        if (day.weatherHint.isNotBlank()) append("天气：${day.weatherHint}")
+        if (day.weatherHint.isNotBlank()) append("澶╂皵锛?{day.weatherHint}")
         if (transportHint != null) {
-            if (isNotBlank()) append("；")
-            append("路线：$transportHint")
+            if (isNotBlank()) append(" | ")
+            append("璺嚎锛?transportHint")
         }
-        if (isBlank()) append("今天的真实天气与路线提示已经可用于 AI 二次优化。")
+        if (isBlank()) append("Weather and route hints are ready for a second AI pass.")
     }
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -2132,9 +2531,9 @@ private fun AiAdviceCard(modifier: Modifier = Modifier, day: TravelItineraryDay,
             modifier = Modifier.padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("🦒 AI建议", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+            Text("馃 AI寤鸿", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
             Text(summary, color = TravelTextMuted)
-            TextButton(onClick = onOpenAi) { Text("询问 AI 优化行程 ›") }
+            TextButton(onClick = onOpenAi) { Text("Ask AI to optimize") }
         }
     }
 }
@@ -2185,15 +2584,15 @@ private fun CurrentTripCard(
                     .background(Color(0xFFFFE3A4)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("🏔")
+                Text("馃彅")
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("当前行程", color = TravelTextMuted, style = MaterialTheme.typography.bodySmall)
+                Text("褰撳墠琛岀▼", color = TravelTextMuted, style = MaterialTheme.typography.bodySmall)
                 Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
                 Text(subtitle, color = TravelTextMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Text(
-                text = if (onClick != null) "继续" else "›",
+                text = if (onClick != null) "Continue" else ">",
                 style = MaterialTheme.typography.titleMedium,
                 color = TravelOrange,
                 fontWeight = FontWeight.Bold,
@@ -2230,7 +2629,7 @@ private fun MineRow(
             )
         }
         Text(
-            text = if (enabled) "›" else "待接入",
+            text = if (enabled) ">" else "Pending",
             color = if (enabled) TravelTextMuted else TravelOrangeDeep,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Bold,
@@ -2238,15 +2637,294 @@ private fun MineRow(
     }
 }
 
+@Composable
+private fun HistoryConversationCard(
+    modifier: Modifier = Modifier,
+    item: TravelHistoryConversationSummary,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (item.subtitle.isNotBlank()) {
+                Text(item.subtitle, color = TravelTealDeep, style = MaterialTheme.typography.bodySmall)
+            }
+            if (item.preview.isNotBlank()) {
+                Text(
+                    item.preview,
+                    color = TravelTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryTripCard(
+    modifier: Modifier = Modifier,
+    item: TravelHistoryTripSummary,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color(0xFFFFF7DF),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFFFFE3A4)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("馃Л")
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    item.summary,
+                    color = TravelTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            SmallStatusPill(text = item.status.ifBlank { "trip" }, color = TravelOrangeDeep)
+        }
+    }
+}
+
+@Composable
+private fun FavoriteSummaryCard(
+    modifier: Modifier = Modifier,
+    item: TravelFavoriteSummary,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFF1FAF8)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    when (item.category) {
+                        "hotel" -> "馃彣"
+                        "food" -> "馃崪"
+                        "activity" -> "馃帿"
+                        else -> "馃挰"
+                    }
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (item.subtitle.isNotBlank()) {
+                    Text(
+                        item.subtitle,
+                        color = TravelTextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text(">", color = TravelTextMuted, style = MaterialTheme.typography.titleLarge)
+        }
+    }
+}
+
+private fun Conversation.toTravelHistoryConversationSummary(): TravelHistoryConversationSummary {
+    val preview = currentMessages.lastOrNull()?.toText().orEmpty().trim()
+    return TravelHistoryConversationSummary(
+        id = id.toString(),
+        title = title.ifBlank { travelPlan?.brief?.destination?.ifBlank { "鍘嗗彶浼氳瘽" } ?: "鍘嗗彶浼氳瘽" },
+        subtitle = travelPlan.toTravelSummaryText(),
+        preview = preview,
+    )
+}
+
+private fun Conversation.toTravelHistoryTripSummary(): TravelHistoryTripSummary? {
+    val plan = travelPlan ?: return null
+    return TravelHistoryTripSummary(
+        conversationId = id.toString(),
+        title = title.ifBlank { plan.brief?.destination?.ifBlank { "鍘嗗彶琛岀▼" } ?: "鍘嗗彶琛岀▼" },
+        summary = plan.toTravelSummaryText(),
+        status = travelPlanningState.name,
+    )
+}
+
+private fun FavoriteEntity.toTravelFavoriteSummary(): TravelFavoriteSummary? {
+    val ref = NodeFavoriteAdapter.decodeRef(this) ?: return null
+    val meta = NodeFavoriteAdapter.decodeMeta(this)
+    return TravelFavoriteSummary(
+        id = id,
+        title = meta?.title?.ifBlank { "鏀惰棌娑堟伅" } ?: "鏀惰棌娑堟伅",
+        subtitle = meta?.previewText.orEmpty(),
+        category = "favorite",
+        conversationId = ref.conversationId.toString(),
+        nodeId = ref.nodeId.toString(),
+    )
+}
+
+private fun TravelPlan?.toFallbackFavoriteSummaries(): List<TravelFavoriteSummary> {
+    val plan = this ?: return emptyList()
+
+    fun items(category: String, list: List<TravelRecommendationItem>): List<TravelFavoriteSummary> {
+        return list.take(2).map { item ->
+            TravelFavoriteSummary(
+                id = "$category-${item.id}",
+                title = item.title,
+                subtitle = item.subtitle.ifBlank { item.area.ifBlank { item.priceHint.ifBlank { item.ratingText } } },
+                category = category,
+                conversationId = plan.conversationId,
+            )
+        }
+    }
+
+    return buildList {
+        addAll(items("hotel", plan.hotels))
+        addAll(items("food", plan.foods))
+        addAll(items("activity", plan.activities))
+    }
+}
+
+private fun Conversation.toTravelCurrentTripSummary(): TravelCurrentTripSummary? {
+    val plan = travelPlan ?: return null
+    return TravelCurrentTripSummary(
+        conversationId = id.toString(),
+        title = title.ifBlank { plan.brief?.destination?.ifBlank { "Current trip" } ?: "Current trip" },
+        summary = plan.toTravelSummaryText(),
+    )
+}
+
+private fun TravelPlan?.toTravelSummaryText(): String {
+    val plan = this ?: return ""
+    val brief = plan.brief
+    val parts = buildList {
+        brief?.destination?.takeIf { it.isNotBlank() }?.let(::add)
+        brief?.dateRange?.takeIf { it.isNotBlank() }?.let(::add)
+        (brief?.days ?: plan.itineraryDays.size).takeIf { it > 0 }?.let { add("${it} days") }
+    }
+    return if (parts.isNotEmpty()) parts.joinToString(" | ") else "Trip summary pending"
+}
+
+private fun exportTripMarkdownFile(
+    context: android.content.Context,
+    conversation: Conversation,
+): File {
+    val exportsDir = File(context.cacheDir, "zhitu-exports").apply { mkdirs() }
+    val safeName = (conversation.title.ifBlank { conversation.travelPlan?.brief?.destination ?: "travel-plan" })
+        .replace(Regex("[\\\\/:*?\"<>|\\s]+"), "-")
+        .trim('-')
+        .ifBlank { "travel-plan" }
+    val file = File(exportsDir, "$safeName.md")
+    file.writeText(buildTripMarkdown(conversation))
+    return file
+}
+
+private fun shareTripMarkdownFile(
+    context: android.content.Context,
+    conversation: Conversation,
+) {
+    val file = exportTripMarkdownFile(context, conversation)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/markdown"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_TEXT, buildTripMarkdown(conversation))
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share itinerary"))
+}
+
+private fun buildTripMarkdown(conversation: Conversation): String {
+    val plan = conversation.travelPlan
+    val brief = plan?.brief
+    return buildString {
+        appendLine("# ${conversation.title.ifBlank { brief?.destination ?: "Travel plan" }}")
+        appendLine()
+        if (brief != null) {
+            appendLine("## Summary")
+            brief.destination.takeIf { it.isNotBlank() }?.let { appendLine("- Destination: $it") }
+            brief.origin.takeIf { it.isNotBlank() }?.let { appendLine("- Origin: $it") }
+            brief.dateRange.takeIf { it.isNotBlank() }?.let { appendLine("- Dates: $it") }
+            brief.days?.let { appendLine("- Days: $it") }
+            brief.budgetText.takeIf { it.isNotBlank() }?.let { appendLine("- Budget: $it") }
+            brief.userIntentSummary.takeIf { it.isNotBlank() }?.let { appendLine("- Intent: $it") }
+            appendLine()
+        }
+
+        plan?.itineraryDays?.takeIf { it.isNotEmpty() }?.let { days ->
+            appendLine("## Daily itinerary")
+            days.forEach { day ->
+                appendLine("### Day ${day.dayIndex}: ${day.title}")
+                day.dateText.takeIf { it.isNotBlank() }?.let { appendLine("- Date: $it") }
+                day.weatherHint.takeIf { it.isNotBlank() }?.let { appendLine("- Weather: $it") }
+                day.items.forEach { item ->
+                    appendLine("- ${item.timeSlot.ifBlank { "TBD" }}: ${item.title}")
+                    item.description.takeIf { it.isNotBlank() }?.let { appendLine("  - Note: $it") }
+                    item.transportHint.takeIf { it.isNotBlank() }?.let { appendLine("  - Transport: $it") }
+                    item.estimatedCost.takeIf { it.isNotBlank() }?.let { appendLine("  - Cost: $it") }
+                }
+                appendLine()
+            }
+        }
+
+        fun appendRecommendationBlock(title: String, items: List<TravelRecommendationItem>) {
+            if (items.isEmpty()) return
+            appendLine("## $title")
+            items.forEach { item ->
+                appendLine("- ${item.title}")
+                item.subtitle.takeIf { it.isNotBlank() }?.let { appendLine("  - Location: $it") }
+                item.reason.takeIf { it.isNotBlank() }?.let { appendLine("  - Why: $it") }
+                item.priceHint.takeIf { it.isNotBlank() }?.let { appendLine("  - Price: $it") }
+                item.ratingText.takeIf { it.isNotBlank() }?.let { appendLine("  - Rating: $it") }
+            }
+            appendLine()
+        }
+
+        appendRecommendationBlock("Hotel recommendations", plan?.hotels.orEmpty())
+        appendRecommendationBlock("Food recommendations", plan?.foods.orEmpty())
+        appendRecommendationBlock("Activity recommendations", plan?.activities.orEmpty())
+    }
+}
+
 private fun categoryLabel(category: TravelItemCategory): String = when (category) {
-    TravelItemCategory.transport -> "交通"
-    TravelItemCategory.sightseeing -> "景点"
-    TravelItemCategory.food -> "餐饮"
-    TravelItemCategory.hotel -> "住宿"
-    TravelItemCategory.activity -> "活动"
-    TravelItemCategory.free_time -> "自由"
-    TravelItemCategory.shopping -> "购物"
-    TravelItemCategory.other -> "其他"
+    TravelItemCategory.transport -> "Transport"
+    TravelItemCategory.sightseeing -> "Sight"
+    TravelItemCategory.food -> "Food"
+    TravelItemCategory.hotel -> "Hotel"
+    TravelItemCategory.activity -> "Activity"
+    TravelItemCategory.free_time -> "Free"
+    TravelItemCategory.shopping -> "Shopping"
+    TravelItemCategory.other -> "Other"
 }
 
 private fun categoryColor(category: TravelItemCategory): Color = when (category) {
@@ -2261,15 +2939,15 @@ private fun categoryColor(category: TravelItemCategory): Color = when (category)
 }
 
 private fun categoryDisplayName(category: TravelRecommendationCategory): String = when (category) {
-    TravelRecommendationCategory.hotel -> "住宿"
-    TravelRecommendationCategory.food -> "美食"
-    TravelRecommendationCategory.activity -> "活动"
+    TravelRecommendationCategory.hotel -> "hotel"
+    TravelRecommendationCategory.food -> "food"
+    TravelRecommendationCategory.activity -> "activity"
 }
 
 private fun categoryEmoji(category: TravelRecommendationCategory): String = when (category) {
-    TravelRecommendationCategory.hotel -> "🏨"
-    TravelRecommendationCategory.food -> "🍜"
-    TravelRecommendationCategory.activity -> "🎯"
+    TravelRecommendationCategory.hotel -> "H"
+    TravelRecommendationCategory.food -> "F"
+    TravelRecommendationCategory.activity -> "A"
 }
 
 private fun paletteForCategory(category: TravelRecommendationCategory): TravelPalette = when (category) {
@@ -2279,9 +2957,9 @@ private fun paletteForCategory(category: TravelRecommendationCategory): TravelPa
 }
 
 private fun categorySearchPlaceholder(category: TravelRecommendationCategory): String = when (category) {
-    TravelRecommendationCategory.hotel -> "搜索民宿、酒店名称…"
-    TravelRecommendationCategory.food -> "搜索餐厅、菜系…"
-    TravelRecommendationCategory.activity -> "搜索活动体验…"
+    TravelRecommendationCategory.hotel -> "Search hotel or stay"
+    TravelRecommendationCategory.food -> "Search restaurant or cuisine"
+    TravelRecommendationCategory.activity -> "Search activity or experience"
 }
 
 private fun buildRecommendationSubtitle(
@@ -2291,50 +2969,50 @@ private fun buildRecommendationSubtitle(
 ): String {
     val destination = conversation.travelPlan?.brief?.destination?.ifBlank { ui.selectedDestination?.name.orEmpty() }
         ?.ifBlank { ui.selectedDestination?.name.orEmpty() }
-        ?: "待选择目的地"
+        ?: "Destination TBD"
     return when (category) {
-        TravelRecommendationCategory.hotel -> "$destination · 发现舒适好去处"
-        TravelRecommendationCategory.food -> "$destination · 发现地道美味"
-        TravelRecommendationCategory.activity -> "$destination · 探索独特体验"
+        TravelRecommendationCategory.hotel -> "$destination | comfortable stays"
+        TravelRecommendationCategory.food -> "$destination | local flavors"
+        TravelRecommendationCategory.activity -> "$destination | unique experiences"
     }
 }
 
 private fun buildRecommendationFilterChips(category: TravelRecommendationCategory): List<String> = when (category) {
-    TravelRecommendationCategory.hotel -> listOf("综合推荐", "价格升序", "评分最高", "距离最近", "民宿", "酒店", "江景")
-    TravelRecommendationCategory.food -> listOf("全部", "米粉", "烧烤", "素食", "茶餐", "夜宵")
-    TravelRecommendationCategory.activity -> listOf("全部", "户外探险", "文化探索", "休闲活动", "夜游")
+    TravelRecommendationCategory.hotel -> listOf("Recommended", "Price", "Rating", "Distance", "Homestay", "Hotel")
+    TravelRecommendationCategory.food -> listOf("All", "Local", "Cafe", "Late-night", "Dessert")
+    TravelRecommendationCategory.activity -> listOf("All", "Outdoor", "Culture", "Leisure", "Night")
 }
 
 private fun mapFilterLabel(value: String): String = when (value) {
-    "hotel" -> "住宿"
-    "food" -> "美食"
-    "route" -> "路线"
-    else -> "活动"
+    "hotel" -> "Hotel"
+    "food" -> "Food"
+    "route" -> "Route"
+    else -> "Activity"
 }
 
 private fun mapFilterValue(label: String): String = when (label) {
-    "住宿" -> "hotel"
-    "美食" -> "food"
-    "路线" -> "route"
+    "Hotel" -> "hotel"
+    "Food" -> "food"
+    "Route" -> "route"
     else -> "activity"
 }
 
 private fun travelPlanningStateLabel(state: TravelPlanningState): String = when (state) {
-    TravelPlanningState.ExtractingBrief -> "提炼需求中"
-    TravelPlanningState.GeneratingPlan -> "生成中"
-    TravelPlanningState.Generated -> "已生成"
-    TravelPlanningState.Failed -> "生成失败"
-    else -> "待完善"
+    TravelPlanningState.ExtractingBrief -> "Extracting brief"
+    TravelPlanningState.GeneratingPlan -> "Generating"
+    TravelPlanningState.Generated -> "Generated"
+    TravelPlanningState.Failed -> "Failed"
+    else -> "Idle"
 }
 
 private fun weatherEmoji(text: String): String {
     val lower = text.lowercase()
     return when {
-        "雨" in text || "rain" in lower -> "🌧"
-        "云" in text || "cloud" in lower -> "☁️"
-        "雪" in text || "snow" in lower -> "❄️"
-        "风" in text || "wind" in lower -> "🌬"
-        else -> "☀️"
+        "rain" in lower -> "rain"
+        "cloud" in lower -> "cloud"
+        "snow" in lower -> "snow"
+        "wind" in lower -> "wind"
+        else -> "sun"
     }
 }
 
@@ -2351,13 +3029,10 @@ private fun sendTravelAiPrompt(vm: ChatVM, conversation: Conversation, prompt: S
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StartPlanningSheet(onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
-    var origin by rememberSaveable { mutableStateOf("") }
     var destination by rememberSaveable { mutableStateOf("") }
     var dates by rememberSaveable { mutableStateOf("") }
     var travelers by rememberSaveable { mutableStateOf("") }
     var budget by rememberSaveable { mutableStateOf("") }
-    var tags by rememberSaveable { mutableStateOf("") }
-    var transport by rememberSaveable { mutableStateOf("") }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -2367,35 +3042,29 @@ private fun StartPlanningSheet(onDismiss: () -> Unit, onSubmit: (String) -> Unit
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("开始填写旅行需求", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-            Text("保持原有入口不变，只补充真实天气、路线和推荐联动。", color = TravelTextMuted)
-            PlannerField(origin, { origin = it }, "出发地")
-            PlannerField(destination, { destination = it }, "目的地")
-            PlannerField(dates, { dates = it }, "日期")
-            PlannerField(travelers, { travelers = it }, "人数")
-            PlannerField(budget, { budget = it }, "预算")
-            PlannerField(tags, { tags = it }, "风格偏好")
-            PlannerField(transport, { transport = it }, "交通偏好")
+            Text("Start planning", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+            Text("Keep the current entry points, but enrich them with destination, schedule, and budget.", color = TravelTextMuted)
+            PlannerField(destination, { destination = it }, "Destination")
+            PlannerField(dates, { dates = it }, "Dates")
+            PlannerField(travelers, { travelers = it }, "Travelers")
+            PlannerField(budget, { budget = it }, "Budget")
             Button(
                 onClick = {
                     onSubmit(
                         buildString {
-                            appendLine("请帮我创建一个旅行规划。")
-                            appendLine("出发地: ${origin.ifBlank { "待定" }}")
-                            appendLine("目的地: ${destination.ifBlank { "待定" }}")
-                            appendLine("日期: ${dates.ifBlank { "待定" }}")
-                            appendLine("人数: ${travelers.ifBlank { "待定" }}")
-                            appendLine("预算: ${budget.ifBlank { "待定" }}")
-                            appendLine("风格偏好: ${tags.ifBlank { "轻松、美食、拍照" }}")
-                            appendLine("交通偏好: ${transport.ifBlank { "高铁、航班、公共交通" }}")
-                            append("请先提炼 brief，再生成推荐和详细行程。")
+                            appendLine("Create a travel plan.")
+                            appendLine("Destination: ${destination.ifBlank { "TBD" }}")
+                            appendLine("Dates: ${dates.ifBlank { "TBD" }}")
+                            appendLine("Travelers: ${travelers.ifBlank { "TBD" }}")
+                            appendLine("Budget: ${budget.ifBlank { "TBD" }}")
+                            append("Extract a brief first, then generate recommendations and a detailed itinerary.")
                         },
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
             ) {
-                Text("继续交给 AI")
+                Text("Continue with AI")
             }
         }
     }

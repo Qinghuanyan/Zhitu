@@ -67,6 +67,8 @@ import me.rerere.rikkahub.data.ai.transformers.ThinkTagTransformer
 import me.rerere.rikkahub.data.ai.transformers.TimeReminderTransformer
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRAVEL_BRIEF_PROMPT
 import me.rerere.rikkahub.data.ai.prompts.DEFAULT_TRAVEL_ITINERARY_PROMPT
+import me.rerere.rikkahub.data.ai.prompts.buildTravelBriefRefinerPrompt
+import me.rerere.rikkahub.data.ai.prompts.buildTravelItineraryAuditorPrompt
 import me.rerere.rikkahub.data.ai.prompts.buildTravelItineraryPrompt
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.datastore.findModelById
@@ -87,6 +89,7 @@ import me.rerere.rikkahub.data.model.TravelPlanningBrief
 import me.rerere.rikkahub.data.model.TravelPlanningFacts
 import me.rerere.rikkahub.data.model.TravelPlanningState
 import me.rerere.rikkahub.data.model.TravelPoi
+import me.rerere.rikkahub.data.model.TravelRecommendationCategory
 import me.rerere.rikkahub.data.model.TravelRecommendationItem
 import me.rerere.rikkahub.data.model.replaceRegexes
 import me.rerere.rikkahub.data.model.toMessageNode
@@ -97,8 +100,9 @@ import me.rerere.rikkahub.web.BadRequestException
 import me.rerere.rikkahub.web.NotFoundException
 import me.rerere.rikkahub.utils.JsonInstant
 import me.rerere.rikkahub.utils.applyPlaceholders
-import me.rerere.rikkahub.utils.sendNotification
 import me.rerere.rikkahub.utils.cancelNotification
+import me.rerere.rikkahub.utils.sendNotification
+import me.rerere.rikkahub.utils.stripMarkdown
 import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -324,6 +328,34 @@ class ChatService(
                     handleMessageComplete(conversationId)
                 }
 
+                _generationDoneFlow.emit(conversationId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                addError(e, conversationId, title = context.getString(R.string.error_title_send_message))
+            }
+        }
+        session.setJob(job)
+    }
+
+    fun submitTravelPlanningRequest(conversationId: Uuid, content: String) {
+        val normalized = content.trim()
+        if (normalized.isBlank()) return
+
+        val session = getOrCreateSession(conversationId)
+        session.getJob()?.cancel()
+
+        val job = appScope.launch {
+            try {
+                val currentConversation = session.state.value
+                val processedContent = preprocessUserInputParts(listOf(UIMessagePart.Text(normalized)))
+                val newConversation = currentConversation.copy(
+                    messageNodes = currentConversation.messageNodes + UIMessage(
+                        role = MessageRole.USER,
+                        parts = processedContent,
+                    ).toMessageNode()
+                )
+                saveConversation(conversationId, newConversation)
+                generateTravelBrief(conversationId, newConversation)
                 _generationDoneFlow.emit(conversationId)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -762,9 +794,7 @@ class ChatService(
         updateConversationState(conversationId) { current ->
             current.copy(travelPlanningState = TravelPlanningState.ExtractingBrief)
         }
-        val content = conversation.currentMessages
-            .takeLast(12)
-            .joinToString("\n\n") { it.summaryAsText() }
+        val content = buildTravelConversationContent(conversation.currentMessages)
         if (content.isBlank()) {
             val latestConversation = conversationRepo.getConversationById(conversationId)
                 ?: getConversationFlow(conversationId).value
@@ -786,29 +816,14 @@ class ChatService(
             return
         }
         runCatching {
-            val settings = settingsStore.settingsFlow.first()
-            val model = settings.getCurrentChatModel()
-                ?: throw IllegalStateException("No chat model available")
-            val provider = model.findProvider(settings.providers)
-                ?: throw IllegalStateException("Provider not found")
-            val providerHandler = providerManager.getProviderByType(provider)
-            val result = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(
-                    UIMessage.user(
-                        DEFAULT_TRAVEL_BRIEF_PROMPT.applyPlaceholders(
-                            "content" to content,
-                        )
+            val draftBrief = decodeJsonPayload<TravelPlanningBrief>(
+                runTravelPlannerTextAgent(
+                    DEFAULT_TRAVEL_BRIEF_PROMPT.applyPlaceholders(
+                        "content" to content,
                     )
-                ),
-                params = TextGenerationParams(
-                    model = model,
-                    thinkingBudget = 0,
-                ),
+                )
             )
-            val brief = decodeJsonPayload<TravelPlanningBrief>(
-                result.choices[0].message?.toText().orEmpty()
-            )
+            val brief = refineTravelBriefWithAgent(content, draftBrief)
             val latestConversation = conversationRepo.getConversationById(conversationId)
                 ?: getConversationFlow(conversationId).value
             val nextPlan = (latestConversation.travelPlan ?: TravelPlan(conversationId = conversationId.toString()))
@@ -844,6 +859,43 @@ class ChatService(
             }
         }.onFailure {
             it.printStackTrace()
+            val fallbackBrief = buildFallbackTravelBrief(content)
+            if (fallbackBrief != null) {
+                val latestConversation = conversationRepo.getConversationById(conversationId)
+                    ?: getConversationFlow(conversationId).value
+                val nextPlan = (latestConversation.travelPlan ?: TravelPlan(conversationId = conversationId.toString()))
+                    .withBrief(
+                        newBrief = fallbackBrief,
+                        status = if (fallbackBrief.canGenerate()) {
+                            TravelPlanStatus.ready_to_generate
+                        } else {
+                            TravelPlanStatus.draft_brief
+                        }
+                    )
+                saveConversation(
+                    conversationId,
+                    latestConversation.copy(
+                        travelPlan = nextPlan,
+                        travelPlanningState = if (fallbackBrief.canGenerate()) {
+                            TravelPlanningState.ReadyToGenerate
+                        } else {
+                            TravelPlanningState.DraftBrief
+                        }
+                    )
+                )
+                if (autoGeneratePlan && fallbackBrief.canGenerate()) {
+                    generateTravelPlan(
+                        conversationId = conversationId,
+                        conversation = latestConversation.copy(
+                            travelPlan = nextPlan,
+                            travelPlanningState = TravelPlanningState.ReadyToGenerate,
+                        ),
+                        brief = fallbackBrief,
+                        refreshBrief = false,
+                    )
+                }
+                return
+            }
             addError(it, conversationId, title = "Travel brief generation failed")
             val latestConversation = conversationRepo.getConversationById(conversationId)
                 ?: getConversationFlow(conversationId).value
@@ -909,36 +961,15 @@ class ChatService(
         )
 
         runCatching {
-            val settings = settingsStore.settingsFlow.first()
-            val model = settings.getCurrentChatModel()
-                ?: throw IllegalStateException("No chat model available")
-            val provider = model.findProvider(settings.providers)
-                ?: throw IllegalStateException("Provider not found")
-            val providerHandler = providerManager.getProviderByType(provider)
-            val content = conversation.currentMessages
-                .takeLast(16)
-                .joinToString("\n\n") { it.summaryAsText() }
-            val result = providerHandler.generateText(
-                providerSetting = provider,
-                messages = listOf(
-                    UIMessage.user(
-                        buildTravelItineraryPrompt(
-                            brief = JsonInstant.encodeToString(ensuredBrief),
-                            facts = JsonInstant.encodeToString(planningFacts),
-                            content = content,
-                        )
-                    )
-                ),
-                params = TextGenerationParams(
-                    model = model,
-                    thinkingBudget = 0,
-                ),
-            )
-            val payload = decodeJsonPayload<TravelGeneratedPayload>(
-                result.choices[0].message?.toText().orEmpty()
-            )
+            val content = buildTravelConversationContent(conversation.currentMessages)
             val latestConversation = conversationRepo.getConversationById(conversationId)
                 ?: getConversationFlow(conversationId).value
+            val payload = repairTravelGeneratedPayloadWithAgent(
+                ensuredBrief = ensuredBrief,
+                planningFacts = planningFacts,
+                content = content,
+                currentPlan = latestConversation.travelPlan ?: TravelPlan(conversationId = conversationId.toString()),
+            )
             val newPlan = enrichGeneratedTravelPlan(
                 currentPlan = latestConversation.travelPlan ?: TravelPlan(conversationId = conversationId.toString()),
                 ensuredBrief = ensuredBrief,
@@ -1000,6 +1031,397 @@ class ChatService(
         return JsonInstant.decodeFromString(normalizedPayload)
     }
 
+    private suspend fun runTravelPlannerTextAgent(prompt: String): String {
+        val settings = settingsStore.settingsFlow.first()
+        val model = settings.getCurrentChatModel()
+            ?: throw IllegalStateException("No chat model available")
+        val provider = model.findProvider(settings.providers)
+            ?: throw IllegalStateException("Provider not found")
+        val providerHandler = providerManager.getProviderByType(provider)
+        val result = providerHandler.generateText(
+            providerSetting = provider,
+            messages = listOf(UIMessage.user(prompt)),
+            params = TextGenerationParams(
+                model = model,
+                thinkingBudget = 0,
+            ),
+        )
+        return result.choices[0].message?.toText().orEmpty()
+    }
+
+    private fun buildTravelConversationContent(messages: List<UIMessage>): String {
+        val preferredMessages = messages
+            .takeLast(16)
+            .filter { it.role == MessageRole.USER }
+            .ifEmpty { messages.takeLast(12) }
+        return preferredMessages.joinToString("\n\n") { message ->
+            when (message.role) {
+                MessageRole.USER -> "[USER] ${sanitizeTravelUiText(message.toText())}"
+                MessageRole.ASSISTANT -> "[ASSISTANT] ${sanitizeTravelUiText(message.toText())}"
+                else -> sanitizeTravelUiText(message.toText())
+            }
+        }
+    }
+
+    private suspend fun refineTravelBriefWithAgent(
+        content: String,
+        draftBrief: TravelPlanningBrief,
+    ): TravelPlanningBrief {
+        val normalizedDraft = normalizeTravelBrief(draftBrief, content)
+        val refinedByModel = runCatching {
+            decodeJsonPayload<TravelPlanningBrief>(
+                runTravelPlannerTextAgent(
+                    buildTravelBriefRefinerPrompt(
+                        brief = JsonInstant.encodeToString(normalizedDraft),
+                        content = content,
+                    )
+                )
+            )
+        }.getOrNull()
+        return normalizeTravelBrief(refinedByModel ?: normalizedDraft, content)
+    }
+
+    private suspend fun repairTravelGeneratedPayloadWithAgent(
+        ensuredBrief: TravelPlanningBrief,
+        planningFacts: TravelPlanningFacts,
+        content: String,
+        currentPlan: TravelPlan,
+    ): TravelGeneratedPayload {
+        val draftPayload = decodeJsonPayload<TravelGeneratedPayload>(
+            runTravelPlannerTextAgent(
+                buildTravelItineraryPrompt(
+                    brief = JsonInstant.encodeToString(ensuredBrief),
+                    currentPlan = JsonInstant.encodeToString(currentPlan),
+                    facts = JsonInstant.encodeToString(planningFacts),
+                    content = content,
+                )
+            )
+        )
+        val normalizedDraft = normalizeTravelGeneratedPayload(
+            payload = draftPayload,
+            brief = ensuredBrief,
+            planningFacts = planningFacts,
+        )
+        val repairedByModel = runCatching {
+            decodeJsonPayload<TravelGeneratedPayload>(
+                runTravelPlannerTextAgent(
+                    buildTravelItineraryAuditorPrompt(
+                        brief = JsonInstant.encodeToString(ensuredBrief),
+                        facts = JsonInstant.encodeToString(planningFacts),
+                        content = content,
+                        payload = JsonInstant.encodeToString(normalizedDraft),
+                    )
+                )
+            )
+        }.getOrNull()
+        return normalizeTravelGeneratedPayload(
+            payload = repairedByModel ?: normalizedDraft,
+            brief = ensuredBrief,
+            planningFacts = planningFacts,
+        )
+    }
+
+    private fun normalizeTravelBrief(
+        brief: TravelPlanningBrief,
+        content: String,
+    ): TravelPlanningBrief {
+        val explicitDays = extractDaysGuess(content)
+        val explicitTravelers = extractTravelerCountGuess(content)
+        val destination = brief.destination.ifBlank { extractDestinationGuess(content).orEmpty() }
+        val budgetText = brief.budgetText.ifBlank { extractBudgetTextGuess(content) }
+        val styleTags = (brief.travelStyleTags + extractTravelStyleTags(content)).distinct()
+        val transportPreferences = (brief.transportPreferences + extractTransportPreferences(content)).distinct()
+        val cleanedSummary = sanitizeTravelUiText(brief.userIntentSummary)
+        val fallbackSummary = buildString {
+            if (destination.isNotBlank()) append(destination)
+            explicitDays?.let {
+                if (isNotBlank()) append("，")
+                append("${it}天行程")
+            }
+            explicitTravelers?.let {
+                if (isNotBlank()) append("，")
+                append("${it}人出行")
+            }
+            budgetText.takeIf { it.isNotBlank() }?.let {
+                if (isNotBlank()) append("，")
+                append(it)
+            }
+        }.ifBlank { sanitizeTravelUiText(content).take(120) }
+
+        return brief.copy(
+            destination = destination,
+            days = (explicitDays ?: brief.days)?.coerceIn(1, 14),
+            travelerCount = (explicitTravelers ?: brief.travelerCount)?.coerceIn(1, 20),
+            budgetText = sanitizeTravelUiText(budgetText),
+            budgetLevel = sanitizeTravelUiText(brief.budgetLevel),
+            travelStyleTags = styleTags.map(::sanitizeTravelUiText).filter { it.isNotBlank() }.distinct(),
+            transportPreferences = transportPreferences.map(::sanitizeTravelUiText).filter { it.isNotBlank() }.distinct(),
+            hardConstraints = brief.hardConstraints.map(::sanitizeTravelUiText).filter { it.isNotBlank() }.distinct(),
+            userIntentSummary = cleanedSummary.ifBlank { fallbackSummary },
+        )
+    }
+
+    private fun normalizeTravelGeneratedPayload(
+        payload: TravelGeneratedPayload,
+        brief: TravelPlanningBrief,
+        planningFacts: TravelPlanningFacts,
+    ): TravelGeneratedPayload {
+        val targetDays = (brief.days ?: payload.itineraryDays.size.takeIf { it > 0 } ?: planningFacts.dailyWeather.size)
+            .coerceIn(1, 14)
+        val normalizedDays = payload.itineraryDays
+            .sortedBy { it.dayIndex }
+            .take(targetDays)
+            .mapIndexed { index, day ->
+                day.copy(
+                    dayIndex = index + 1,
+                    title = sanitizeTravelUiText(day.title).ifBlank { "Day ${index + 1}" },
+                    dateText = sanitizeTravelUiText(day.dateText).ifBlank {
+                        planningFacts.dailyWeather.getOrNull(index)?.date.orEmpty()
+                    },
+                    weatherHint = sanitizeTravelUiText(day.weatherHint).ifBlank {
+                        planningFacts.dailyWeather.getOrNull(index)?.summary.orEmpty()
+                    },
+                    items = day.items.map { item ->
+                        item.copy(
+                            title = sanitizeTravelUiText(item.title),
+                            description = sanitizeTravelUiText(item.description),
+                            estimatedCost = sanitizeTravelUiText(item.estimatedCost),
+                            transportHint = sanitizeTravelUiText(item.transportHint),
+                        )
+                    }.filter { it.title.isNotBlank() }
+                )
+            }
+            .toMutableList()
+
+        while (normalizedDays.size < targetDays) {
+            val index = normalizedDays.size
+            normalizedDays += TravelItineraryDay(
+                dayIndex = index + 1,
+                title = "Day ${index + 1}",
+                dateText = planningFacts.dailyWeather.getOrNull(index)?.date.orEmpty(),
+                weatherHint = planningFacts.dailyWeather.getOrNull(index)?.summary.orEmpty(),
+                items = emptyList(),
+            )
+        }
+
+        return payload.copy(
+            hotels = payload.hotels.map { recommendation ->
+                recommendation.copy(
+                    title = sanitizeTravelUiText(recommendation.title),
+                    subtitle = sanitizeTravelUiText(recommendation.subtitle),
+                    tags = recommendation.tags.map(::sanitizeTravelUiText).filter { it.isNotBlank() },
+                    reason = sanitizeTravelUiText(recommendation.reason),
+                    priceHint = sanitizeTravelUiText(recommendation.priceHint),
+                    ratingText = sanitizeTravelUiText(recommendation.ratingText),
+                    area = sanitizeTravelUiText(recommendation.area),
+                    inventoryHint = sanitizeTravelUiText(recommendation.inventoryHint),
+                    bookingUrl = recommendation.bookingUrl.trim(),
+                    source = sanitizeTravelUiText(recommendation.source),
+                )
+            },
+            foods = payload.foods.map { recommendation ->
+                recommendation.copy(
+                    title = sanitizeTravelUiText(recommendation.title),
+                    subtitle = sanitizeTravelUiText(recommendation.subtitle),
+                    tags = recommendation.tags.map(::sanitizeTravelUiText).filter { it.isNotBlank() },
+                    reason = sanitizeTravelUiText(recommendation.reason),
+                    priceHint = sanitizeTravelUiText(recommendation.priceHint),
+                    ratingText = sanitizeTravelUiText(recommendation.ratingText),
+                    area = sanitizeTravelUiText(recommendation.area),
+                    inventoryHint = sanitizeTravelUiText(recommendation.inventoryHint),
+                    bookingUrl = recommendation.bookingUrl.trim(),
+                    source = sanitizeTravelUiText(recommendation.source),
+                )
+            },
+            activities = payload.activities.map { recommendation ->
+                recommendation.copy(
+                    title = sanitizeTravelUiText(recommendation.title),
+                    subtitle = sanitizeTravelUiText(recommendation.subtitle),
+                    tags = recommendation.tags.map(::sanitizeTravelUiText).filter { it.isNotBlank() },
+                    reason = sanitizeTravelUiText(recommendation.reason),
+                    priceHint = sanitizeTravelUiText(recommendation.priceHint),
+                    ratingText = sanitizeTravelUiText(recommendation.ratingText),
+                    area = sanitizeTravelUiText(recommendation.area),
+                    inventoryHint = sanitizeTravelUiText(recommendation.inventoryHint),
+                    bookingUrl = recommendation.bookingUrl.trim(),
+                    source = sanitizeTravelUiText(recommendation.source),
+                )
+            },
+            pois = payload.pois.map { poi ->
+                poi.copy(
+                    name = sanitizeTravelUiText(poi.name),
+                    category = sanitizeTravelUiText(poi.category),
+                    address = sanitizeTravelUiText(poi.address),
+                )
+            },
+            itineraryDays = normalizedDays,
+        )
+    }
+
+    private fun sanitizeTravelUiText(text: String): String {
+        return text
+            .replace(Regex("""(?i)\[(user|assistant|system)\]\s*:?\s*"""), "")
+            .replace(Regex("""(?im)^(user|assistant|system)\s*:?\s*"""), "")
+            .replace(Regex("""(?is)<think>.*?</think>"""), " ")
+            .replace(Regex("""(?im)^thinking\s*:?\s*"""), "")
+            .replace("```json", "")
+            .replace("```JSON", "")
+            .replace("```", "")
+            .stripMarkdown()
+            .replace(Regex("""\\([`*_#>\-\[\]\(\)])"""), "$1")
+            .replace(Regex("""[*#>`~_]+"""), " ")
+            .replace(Regex("""<[^>]+>"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    }
+
+    private suspend fun buildFallbackTravelBrief(content: String): TravelPlanningBrief? {
+        val normalized = content.trim()
+        if (normalized.isBlank()) return null
+
+        val destinationGuess = extractDestinationGuess(normalized)
+            ?: travelPlanningDataRepository.searchDestinationSuggestions(normalized).firstOrNull()?.name.orEmpty()
+        val daysGuess = extractDaysGuess(normalized)
+        val travelerCountGuess = extractTravelerCountGuess(normalized)
+        val budgetTextGuess = extractBudgetTextGuess(normalized)
+        val styleTags = extractTravelStyleTags(normalized)
+        val transportPreferences = extractTransportPreferences(normalized)
+
+        val brief = TravelPlanningBrief(
+            destination = destinationGuess,
+            days = daysGuess,
+            travelerCount = travelerCountGuess,
+            budgetText = budgetTextGuess,
+            budgetLevel = extractBudgetLevel(normalized, budgetTextGuess),
+            travelStyleTags = styleTags,
+            transportPreferences = transportPreferences,
+            userIntentSummary = normalized.take(160),
+        )
+        return brief.takeIf { it.canGenerate() }
+    }
+
+    private fun extractDestinationGuess(text: String): String? {
+        val patterns = listOf(
+            Regex("(?:去|到|前往|奔赴|飞去|来一场|安排到)\\s*([\\u4E00-\\u9FFFA-Za-z0-9]{2,20})"),
+            Regex("([\\u4E00-\\u9FFFA-Za-z0-9]{2,20})(?:\\s*(?:两日|2日|三日|3日|四日|4日|五日|5日|六日|6日|七日|7日|八日|8日|九日|9日|十日|10日)?\\s*游)"),
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(text) ?: continue
+            val candidate = match.groupValues.getOrNull(1).orEmpty().trim().trimEnd('游', '玩', '行', '程')
+            if (candidate.isNotBlank()) return candidate
+        }
+        return null
+    }
+
+    private fun extractDaysGuess(text: String): Int? {
+        val digitMatch = Regex("(\\d{1,2})\\s*(?:天|日|晚)").find(text)
+        if (digitMatch != null) {
+            return digitMatch.groupValues.getOrNull(1)?.toIntOrNull()?.coerceIn(1, 14)
+        }
+        val chineseMatch = Regex("([一二三四五六七八九十两]+)\\s*(?:天|日|晚|日游)").find(text)
+        if (chineseMatch != null) {
+            return chineseNumberToInt(chineseMatch.groupValues.getOrNull(1).orEmpty())?.coerceIn(1, 14)
+        }
+        return null
+    }
+
+    private fun extractTravelerCountGuess(text: String): Int? {
+        val digitMatch = Regex("(\\d{1,2})\\s*人").find(text)
+        if (digitMatch != null) {
+            return digitMatch.groupValues.getOrNull(1)?.toIntOrNull()?.coerceIn(1, 20)
+        }
+        val chineseMatch = Regex("([一二三四五六七八九十两]+)\\s*人").find(text)
+        if (chineseMatch != null) {
+            return chineseNumberToInt(chineseMatch.groupValues.getOrNull(1).orEmpty())?.coerceIn(1, 20)
+        }
+        return null
+    }
+
+    private fun extractBudgetTextGuess(text: String): String {
+        val digitMatch = Regex("预算\\s*([\\d,.]+)\\s*(?:元|块|rmb|RMB)?").find(text)
+        if (digitMatch != null) {
+            return "预算 ${digitMatch.groupValues.getOrNull(1).orEmpty()}"
+        }
+        val budgetKeywords = listOf("高预算", "中等预算", "低预算", "省钱", "经济型", "奢华")
+        val keyword = budgetKeywords.firstOrNull { text.contains(it) }
+        return keyword?.let { "预算偏好：$it" }.orEmpty()
+    }
+
+    private fun extractBudgetLevel(text: String, budgetText: String): String {
+        val normalized = (budgetText + " " + text)
+        return when {
+            normalized.contains("高预算") || normalized.contains("奢华") -> "high"
+            normalized.contains("低预算") || normalized.contains("省钱") || normalized.contains("经济") -> "low"
+            normalized.contains("中等") || normalized.contains("均衡") -> "mid"
+            else -> "mid"
+        }
+    }
+
+    private fun extractTravelStyleTags(text: String): List<String> {
+        val keywords = linkedMapOf(
+            "美食" to "美食",
+            "吃" to "美食",
+            "夜景" to "夜景",
+            "拍照" to "拍照",
+            "亲子" to "亲子",
+            "购物" to "购物",
+            "自然" to "自然",
+            "海边" to "海边",
+            "博物馆" to "文化",
+            "文化" to "文化",
+            "温泉" to "温泉",
+            "休闲" to "休闲",
+            "徒步" to "徒步",
+            "轻松" to "轻松",
+            "商务" to "商务",
+        )
+        return keywords.filter { (key, _) -> text.contains(key) }.map { it.value }.distinct()
+    }
+
+    private fun extractTransportPreferences(text: String): List<String> {
+        val keywords = linkedMapOf(
+            "高铁" to "高铁",
+            "火车" to "火车",
+            "动车" to "动车",
+            "飞机" to "飞机",
+            "自驾" to "自驾",
+            "打车" to "打车",
+            "地铁" to "地铁",
+            "公交" to "公交",
+            "步行" to "步行",
+        )
+        return keywords.filter { (key, _) -> text.contains(key) }.map { it.value }.distinct()
+    }
+
+    private fun chineseNumberToInt(value: String): Int? {
+        val normalized = value.trim()
+        if (normalized.isBlank()) return null
+        if (normalized == "十") return 10
+        if (normalized == "两") return 2
+        if (normalized.length == 1) {
+            return when (normalized) {
+                "一" -> 1
+                "二" -> 2
+                "三" -> 3
+                "四" -> 4
+                "五" -> 5
+                "六" -> 6
+                "七" -> 7
+                "八" -> 8
+                "九" -> 9
+                else -> null
+            }
+        }
+        return normalized
+            .replace("两", "二")
+            .takeIf { it.length == 2 && it.startsWith("十") }
+            ?.let { 10 + chineseNumberToInt(it.substring(1)).orZero() }
+            ?: normalized.takeIf { it.length == 2 && it.endsWith("十") }
+                ?.let { chineseNumberToInt(it.first().toString()).orZero() * 10 }
+    }
+
+    private fun Int?.orZero(): Int = this ?: 0
+
     private fun extractJsonObject(text: String): String? {
         val start = text.indexOf('{')
         if (start < 0) return null
@@ -1030,12 +1452,44 @@ class ChatService(
         payload: TravelGeneratedPayload,
         planningFacts: TravelPlanningFacts,
     ): TravelPlan {
+        val poiFallbackSource = payload.pois + currentPlan.pois
         val hotels = payload.hotels.ifEmpty {
-            planningFacts.commercialHotels.ifEmpty { planningFacts.nearbyHotels }.take(6)
+            planningFacts.commercialHotels
+                .ifEmpty { planningFacts.nearbyHotels }
+                .ifEmpty { currentPlan.hotels }
+                .ifEmpty {
+                    fallbackRecommendationsFromPois(
+                        pois = poiFallbackSource,
+                        category = TravelRecommendationCategory.hotel,
+                        destination = ensuredBrief.destination,
+                    )
+                }
+                .take(6)
         }
-        val foods = payload.foods.ifEmpty { planningFacts.nearbyFoods.take(6) }
+        val foods = payload.foods.ifEmpty {
+            planningFacts.nearbyFoods
+                .ifEmpty { currentPlan.foods }
+                .ifEmpty {
+                    fallbackRecommendationsFromPois(
+                        pois = poiFallbackSource,
+                        category = TravelRecommendationCategory.food,
+                        destination = ensuredBrief.destination,
+                    )
+                }
+                .take(6)
+        }
         val activities = payload.activities.ifEmpty {
-            planningFacts.commercialActivities.ifEmpty { planningFacts.nearbyActivities }.take(8)
+            planningFacts.commercialActivities
+                .ifEmpty { planningFacts.nearbyActivities }
+                .ifEmpty { currentPlan.activities }
+                .ifEmpty {
+                    fallbackRecommendationsFromPois(
+                        pois = poiFallbackSource,
+                        category = TravelRecommendationCategory.activity,
+                        destination = ensuredBrief.destination,
+                    )
+                }
+                .take(8)
         }
 
         val mergedPois = mergePois(
@@ -1044,6 +1498,7 @@ class ChatService(
             foods = foods,
             activities = activities,
             planningFacts = planningFacts,
+            existingPois = currentPlan.pois,
         )
         val baseItineraryDays = payload.itineraryDays.ifEmpty {
             buildFallbackItineraryDays(
@@ -1134,8 +1589,10 @@ class ChatService(
         foods: List<me.rerere.rikkahub.data.model.TravelRecommendationItem>,
         activities: List<me.rerere.rikkahub.data.model.TravelRecommendationItem>,
         planningFacts: TravelPlanningFacts,
+        existingPois: List<TravelPoi>,
     ): List<TravelPoi> {
         val factPois = buildList {
+            addAll(existingPois)
             addAll(planningFacts.candidatePois)
             addAll(hotels.map { recommendation ->
                 TravelPoi(
@@ -1356,6 +1813,41 @@ class ChatService(
             address = recommendation.subtitle,
             linkedRecommendationId = recommendation.id,
         )
+    }
+
+    private fun fallbackRecommendationsFromPois(
+        pois: List<TravelPoi>,
+        category: TravelRecommendationCategory,
+        destination: String,
+    ): List<TravelRecommendationItem> {
+        val categoryName = category.name
+        return pois
+            .asSequence()
+            .filter { poi ->
+                poi.lat != null &&
+                    poi.lon != null &&
+                    poi.name.isNotBlank() &&
+                    poi.category.equals(categoryName, ignoreCase = true)
+            }
+            .distinctBy { it.linkedRecommendationId ?: it.id }
+            .map { poi ->
+                TravelRecommendationItem(
+                    id = poi.linkedRecommendationId ?: poi.id,
+                    category = category,
+                    title = poi.name,
+                    subtitle = poi.address,
+                    reason = when (category) {
+                        TravelRecommendationCategory.hotel -> "$destination 可继续使用的住宿点位"
+                        TravelRecommendationCategory.food -> "$destination 可继续使用的餐饮点位"
+                        TravelRecommendationCategory.activity -> "$destination 可继续使用的活动/景点点位"
+                    },
+                    area = poi.address,
+                    source = "poi-fallback",
+                    lat = poi.lat,
+                    lon = poi.lon,
+                )
+            }
+            .toList()
     }
 
     private fun TravelRecommendationItem.toItineraryItem(

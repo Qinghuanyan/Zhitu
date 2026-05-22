@@ -1,0 +1,4122 @@
+﻿package me.rerere.rikkahub.ui.pages.travel
+
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.ai.core.MessageRole
+import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.db.entity.FavoriteEntity
+import me.rerere.rikkahub.data.favorite.NodeFavoriteAdapter
+import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.model.Conversation
+import me.rerere.rikkahub.data.model.FavoriteType
+import me.rerere.rikkahub.data.model.TravelItineraryDay
+import me.rerere.rikkahub.data.model.TravelItemCategory
+import me.rerere.rikkahub.data.model.TravelPlanningBrief
+import me.rerere.rikkahub.data.model.TravelPlanningState
+import me.rerere.rikkahub.data.model.TravelPlan
+import me.rerere.rikkahub.data.model.TravelPoi
+import me.rerere.rikkahub.data.model.TravelRecommendationCategory
+import me.rerere.rikkahub.data.model.TravelRecommendationItem
+import me.rerere.rikkahub.data.model.TravelSearchSuggestion
+import me.rerere.rikkahub.data.repository.ConversationRepository
+import me.rerere.rikkahub.data.repository.FavoriteRepository
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.Navigator
+import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
+import me.rerere.rikkahub.ui.components.richtext.MarkdownBlock
+import me.rerere.rikkahub.ui.pages.chat.ChatMapDrawerContent
+import me.rerere.rikkahub.ui.pages.chat.ChatVM
+import me.rerere.rikkahub.ui.pages.chat.TravelHubUiState
+import me.rerere.rikkahub.utils.base64Decode
+import me.rerere.rikkahub.utils.base64Encode
+import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
+import org.koin.core.parameter.parametersOf
+import java.io.File
+import kotlin.uuid.Uuid
+
+private val TravelBg = Color(0xFFF1FBF8)
+private val TravelLine = Color(0xFFD5EEE7)
+private val TravelTextMuted = Color(0xFF6D8F88)
+private val TravelTeal = Color(0xFF43B8A7)
+private val TravelTealDeep = Color(0xFF258C80)
+private val TravelBlue = Color(0xFF69B7E9)
+private val TravelBlueDeep = Color(0xFF4D92D4)
+private val TravelOrange = Color(0xFFFF9750)
+private val TravelOrangeDeep = Color(0xFFFF7A2E)
+private val TravelMint = Color(0xFF79D8BE)
+private val TravelLavender = Color(0xFFDCCFF6)
+private val TravelGold = Color(0xFFFFD67A)
+
+private data class TravelPalette(
+    val start: Color,
+    val end: Color,
+    val soft: Color,
+    val accent: Color,
+)
+
+private data class TravelHistoryConversationSummary(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val preview: String,
+)
+
+private data class TravelHistoryTripSummary(
+    val conversationId: String,
+    val title: String,
+    val summary: String,
+    val status: String,
+)
+
+private data class TravelFavoriteSummary(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val category: String,
+    val conversationId: String? = null,
+    val nodeId: String? = null,
+)
+
+private data class TravelCurrentTripSummary(
+    val conversationId: String?,
+    val title: String,
+    val summary: String,
+)
+
+private enum class TravelTab(val route: String, val label: String, val icon: String) {
+    Home("home", "棣栭〉", "馃彔"),
+    Map("map", "鍦板浘", "馃椇"),
+    Itinerary("itinerary", "琛岀▼", "馃棑"),
+    Ai("ai", "AI", "鉁?),
+    Mine("mine", "鎴戠殑", "馃懁"),
+}
+
+@Composable
+fun TravelHubPage(
+    id: Uuid,
+    text: String? = null,
+    files: List<Uri> = emptyList(),
+    nodeId: Uuid? = null,
+    startTab: String = "home",
+    highlightPoiId: String? = null,
+    preferredMapFilter: String? = null,
+) {
+    val vm: ChatVM = koinViewModel(parameters = { parametersOf(id.toString()) })
+    val filesManager: FilesManager = koinInject()
+    val conversationRepo: ConversationRepository = koinInject()
+    val favoriteRepository: FavoriteRepository = koinInject()
+    val nav = LocalNavController.current
+    val context = LocalContext.current
+    val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val historyConversationCount by vm.historyConversationCount.collectAsStateWithLifecycle()
+    val assistantConversations by conversationRepo
+        .getConversationsOfAssistant(conversation.assistantId)
+        .collectAsStateWithLifecycle(emptyList())
+    val favoriteEntities by favoriteRepository
+        .listByType(FavoriteType.NODE)
+        .collectAsStateWithLifecycle(emptyList())
+    val ui = vm.travelHubUiState
+    var tab by rememberSaveable(id.toString()) {
+        mutableStateOf(TravelTab.entries.firstOrNull { it.route == startTab } ?: TravelTab.Home)
+    }
+    var handled by rememberSaveable(id.toString()) { mutableStateOf(false) }
+    var showSheet by rememberSaveable(id.toString()) { mutableStateOf(false) }
+    var appliedPreferredMapFilter by rememberSaveable(id.toString(), preferredMapFilter, highlightPoiId) {
+        mutableStateOf(false)
+    }
+    val displayedWeatherSummary = vm.homeWeatherSummary(conversation)
+    val visibleMapPois = vm.visibleMapPois(conversation, highlightPoiId)
+    val historyConversations = remember(assistantConversations) {
+        assistantConversations
+            .sortedByDescending { it.updateAt }
+            .take(4)
+            .map(Conversation::toTravelHistoryConversationSummary)
+    }
+    val historyTrips = remember(assistantConversations) {
+        assistantConversations
+            .sortedByDescending { it.updateAt }
+            .mapNotNull(Conversation::toTravelHistoryTripSummary)
+            .take(4)
+    }
+    val favoriteItems = remember(favoriteEntities, conversation) {
+        favoriteEntities
+            .mapNotNull(FavoriteEntity::toTravelFavoriteSummary)
+            .ifEmpty { conversation.travelPlan.toFallbackFavoriteSummaries() }
+            .take(6)
+    }
+    val currentTripSummary = remember(conversation) {
+        conversation.toTravelCurrentTripSummary()
+    }
+    val imeVisible = WindowInsets.isImeVisible
+
+    LaunchedEffect(conversation.travelPlanningState) {
+        if (conversation.travelPlanningState == TravelPlanningState.Generated && tab != TravelTab.Map) {
+            tab = TravelTab.Itinerary
+        }
+    }
+    LaunchedEffect(conversation.travelPlan?.brief?.destination) {
+        conversation.travelPlan?.brief?.destination?.takeIf { it.isNotBlank() }?.let(vm::ensureTravelDestinationContext)
+    }
+    LaunchedEffect(tab, preferredMapFilter) {
+        if (tab == TravelTab.Map && !appliedPreferredMapFilter && !preferredMapFilter.isNullOrBlank()) {
+            vm.selectTravelMapFilter(preferredMapFilter)
+            appliedPreferredMapFilter = true
+        }
+    }
+    LaunchedEffect(text, files, conversation.messageNodes.size) {
+        if (handled || conversation.messageNodes.isNotEmpty()) return@LaunchedEffect
+        val decoded = runCatching { text?.base64Decode().orEmpty() }.getOrDefault(text.orEmpty())
+        val localFiles = if (files.isNotEmpty()) filesManager.createChatFilesByContents(files) else emptyList()
+        val contentTypes = files.mapNotNull { filesManager.getFileMimeType(it) }
+        val parts = buildList {
+            localFiles.forEachIndexed { index, file ->
+                when {
+                    contentTypes.getOrNull(index)?.startsWith("image/") == true -> add(UIMessagePart.Image(file.toString()))
+                    contentTypes.getOrNull(index)?.startsWith("video/") == true -> add(UIMessagePart.Video(file.toString()))
+                    contentTypes.getOrNull(index)?.startsWith("audio/") == true -> add(UIMessagePart.Audio(file.toString()))
+                    else -> add(
+                        UIMessagePart.Document(
+                            url = file.toString(),
+                            fileName = "attachment",
+                            mime = contentTypes.getOrNull(index) ?: "application/octet-stream",
+                        ),
+                    )
+                }
+            }
+            if (decoded.isNotBlank()) add(UIMessagePart.Text(decoded))
+        }
+        if (parts.isNotEmpty()) {
+            if (localFiles.isEmpty() && decoded.isNotBlank()) {
+                vm.startTravelPlanning(decoded)
+            } else {
+                vm.ensureTravelAssistantSelected()
+                vm.handleMessageSend(parts)
+            }
+            tab = TravelTab.Ai
+        }
+        handled = true
+    }
+
+    Scaffold(
+        containerColor = TravelBg,
+        bottomBar = {
+            if (!(tab == TravelTab.Ai && imeVisible)) {
+                NavigationBar(containerColor = Color.White) {
+                    TravelTab.entries.forEach { item ->
+                        NavigationBarItem(
+                            selected = tab == item,
+                            onClick = { tab = item },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = TravelTealDeep,
+                                selectedTextColor = TravelTealDeep,
+                                indicatorColor = Color(0xFFDDF7F1),
+                                unselectedIconColor = TravelTextMuted,
+                                unselectedTextColor = TravelTextMuted,
+                            ),
+                            icon = { Text(item.icon) },
+                            label = { Text(item.label) },
+                        )
+                    }
+                }
+            }
+        },
+    ) { inner ->
+        when (tab) {
+            TravelTab.Home -> IntegratedHomeTab(
+                modifier = Modifier.padding(inner),
+                conversation = conversation,
+                ui = ui,
+                weatherSummary = displayedWeatherSummary,
+                onQueryChange = vm::onTravelSearchQueryChange,
+                onSelectSuggestion = vm::selectTravelDestination,
+                onStartPlanning = { showSheet = true },
+                onGeneratePlan = vm::generateTravelPlan,
+                onOpenHotels = { nav.navigate(Screen.TravelHotels(id.toString())) },
+                onOpenFoods = { nav.navigate(Screen.TravelFoods(id.toString())) },
+                onOpenActivities = { nav.navigate(Screen.TravelActivities(id.toString())) },
+                onOpenMap = { tab = TravelTab.Map },
+                onOpenAi = { tab = TravelTab.Ai },
+                onOpenMap = { tab = TravelTab.Map },
+                onOpenMap = { tab = TravelTab.Map },
+                onOpenItinerary = { tab = TravelTab.Itinerary },
+                onOpenMine = { tab = TravelTab.Mine },
+            )
+
+            TravelTab.Map -> MapTab(
+                modifier = Modifier.padding(inner),
+                conversation = conversation,
+                ui = ui,
+                mapPois = visibleMapPois,
+                highlightPoiId = highlightPoiId,
+                onQueryChange = vm::onTravelSearchQueryChange,
+                onSelectSuggestion = vm::selectTravelDestination,
+                onSelectFilter = vm::selectTravelMapFilter,
+            )
+
+            TravelTab.Itinerary -> IntegratedItineraryTab(
+                modifier = Modifier.padding(inner),
+                conversation = conversation,
+                onStartPlanning = { showSheet = true },
+                onOpenAi = { tab = TravelTab.Ai },
+                onOpenMap = { tab = TravelTab.Map },
+                onExportTrip = {
+                    val file = exportTripMarkdownFile(context, conversation)
+                    Toast.makeText(context, "宸插鍑哄埌 ${file.absolutePath}", Toast.LENGTH_LONG).show()
+                },
+                onShareTrip = {
+                    shareTripMarkdownFile(context, conversation)
+                },
+            )
+
+            TravelTab.Ai -> IntegratedAiTab(
+                modifier = Modifier.padding(inner),
+                vm = vm,
+                conversation = conversation,
+                nodeId = nodeId,
+                onOpenItinerary = { tab = TravelTab.Itinerary },
+                onOpenMap = { tab = TravelTab.Map },
+                onOpenHotels = { nav.navigate(Screen.TravelHotels(id.toString())) },
+                onOpenFoods = { nav.navigate(Screen.TravelFoods(id.toString())) },
+                onOpenActivities = { nav.navigate(Screen.TravelActivities(id.toString())) },
+            )
+
+            TravelTab.Mine -> ProfileIntegratedMineTab(
+                modifier = Modifier.padding(inner),
+                conversation = conversation,
+                historyConversationCount = historyConversationCount,
+                historyConversations = historyConversations,
+                historyTrips = historyTrips,
+                favoriteItems = favoriteItems,
+                currentTripSummary = currentTripSummary,
+                onOpenCurrentTrip = { tab = TravelTab.Itinerary },
+                onOpenHistoryConversation = { conversationId ->
+                    nav.navigate(Screen.TravelHub(conversationId, startTab = "ai")) { launchSingleTop = true }
+                },
+                onOpenHistoryTrip = { conversationId ->
+                    nav.navigate(Screen.TravelHub(conversationId, startTab = "itinerary")) { launchSingleTop = true }
+                },
+                onOpenFavoriteItem = { favorite ->
+                    when {
+                        !favorite.conversationId.isNullOrBlank() && !favorite.nodeId.isNullOrBlank() -> {
+                            nav.navigate(Screen.Chat(favorite.conversationId, nodeId = favorite.nodeId)) {
+                                launchSingleTop = true
+                            }
+                        }
+
+                        favorite.category == "hotel" -> nav.navigate(Screen.TravelHotels(id.toString())) { launchSingleTop = true }
+                        favorite.category == "food" -> nav.navigate(Screen.TravelFoods(id.toString())) { launchSingleTop = true }
+                        favorite.category == "activity" -> nav.navigate(Screen.TravelActivities(id.toString())) { launchSingleTop = true }
+                        else -> nav.navigate(Screen.Favorite) { launchSingleTop = true }
+                    }
+                },
+            )
+        }
+    }
+
+    if (showSheet) {
+        StartPlanningSheet(
+            onDismiss = { showSheet = false },
+            onSubmit = { prompt ->
+                showSheet = false
+                if (conversation.messageNodes.isEmpty()) {
+                    vm.startTravelPlanning(prompt)
+                    tab = TravelTab.Ai
+                } else {
+                    nav.clearAndNavigate(
+                        Screen.TravelHub(
+                            id = Uuid.random().toString(),
+                            text = prompt.base64Encode(),
+                            startTab = "ai",
+                        ),
+                    )
+                }
+            },
+        )
+    }
+}
+
+@Composable
+fun TravelRecommendationPage(id: Uuid, title: String, category: TravelRecommendationCategory) {
+    val vm: ChatVM = koinViewModel(parameters = { parametersOf(id.toString()) })
+    val nav = LocalNavController.current
+    val conversation by vm.conversation.collectAsStateWithLifecycle()
+    val ui = vm.travelHubUiState
+    val palette = paletteForCategory(category)
+    val items = recommendationItemsFor(category, conversation, ui)
+
+    LaunchedEffect(conversation.travelPlan?.brief?.destination) {
+        conversation.travelPlan?.brief?.destination?.takeIf { it.isNotBlank() }?.let(vm::ensureTravelDestinationContext)
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(TravelBg),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item {
+            GradientHeader(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                palette = palette,
+                smallTitle = categoryEmoji(category),
+                title = title,
+                subtitle = buildRecommendationSubtitle(category, conversation, ui),
+            ) {
+                HeaderActionRow(
+                    leftLabel = "杩斿洖",
+                    rightLabel = "AI",
+                    onLeft = { nav.popBackStack() },
+                    onRight = { nav.navigate(Screen.TravelHub(id.toString(), startTab = "ai")) },
+                )
+                Spacer(Modifier.height(12.dp))
+                SearchBox(
+                    value = ui.searchQuery,
+                    onValueChange = vm::onTravelSearchQueryChange,
+                    placeholder = categorySearchPlaceholder(category),
+                )
+                if (ui.suggestions.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    SuggestionCard(
+                        suggestions = ui.suggestions,
+                        onSelectSuggestion = vm::selectTravelDestination,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                ChipRow(buildRecommendationFilterChips(category))
+            }
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "馃搶",
+                title = "鍏辨壘鍒?${items.size} 鏉?{categoryDisplayName(category)}",
+            )
+        }
+
+        if (items.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "杩樻病鏈夌湡瀹?{categoryDisplayName(category)}鏁版嵁",
+                    text = if (ui.isLoadingDetails) "姝ｅ湪鍔犺浇鐩殑鍦颁簨瀹炴暟鎹€? else "鍏堥€夋嫨鐩殑鍦帮紝鍐嶅姞杞芥帹鑽愭垨鐢熸垚琛岀▼銆?,
+                )
+            }
+        } else {
+            items(items, key = { it.id }) { item ->
+                RecommendationListingCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    item = item,
+                    palette = palette,
+                    category = category,
+                    onAskAi = {
+                        sendTravelAiPrompt(vm, conversation, buildRecommendationPrompt(item, category))
+                        nav.popBackStack()
+                    },
+                    onOpenMap = {
+                        nav.navigate(
+                            Screen.TravelHub(
+                                id = id.toString(),
+                                startTab = "map",
+                                highlightPoiId = item.id,
+                                preferredMapFilter = when (category) {
+                                    TravelRecommendationCategory.hotel -> "hotel"
+                                    TravelRecommendationCategory.food -> "food"
+                                    TravelRecommendationCategory.activity -> "activity"
+                                },
+                            )
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun recommendationItemsFor(
+    category: TravelRecommendationCategory,
+    conversation: Conversation,
+    ui: TravelHubUiState,
+): List<TravelRecommendationItem> {
+    val plan = conversation.travelPlan
+    return when (category) {
+        TravelRecommendationCategory.hotel -> plan?.hotels.orEmpty().ifEmpty { ui.hotels }
+        TravelRecommendationCategory.food -> plan?.foods.orEmpty().ifEmpty { ui.foods }
+        TravelRecommendationCategory.activity -> plan?.activities.orEmpty().ifEmpty { ui.activities }
+    }
+}
+
+private fun buildRecommendationPrompt(item: TravelRecommendationItem, category: TravelRecommendationCategory): String = buildString {
+    appendLine("璇锋妸杩欐潯${categoryDisplayName(category)}寤鸿铻嶅叆鎴戠殑鏃呰璁″垝銆?)
+    appendLine("鍚嶇О: ${item.title}")
+    if (item.subtitle.isNotBlank()) appendLine("鍦板潃: ${item.subtitle}")
+    if (item.area.isNotBlank()) appendLine("鐗囧尯: ${item.area}")
+    if (item.priceHint.isNotBlank()) appendLine("浠锋牸: ${item.priceHint}")
+    if (item.ratingText.isNotBlank()) appendLine("璇勫垎: ${item.ratingText}")
+    if (item.inventoryHint.isNotBlank()) appendLine("钀ヤ笟/搴撳瓨: ${item.inventoryHint}")
+    if (item.bookingUrl.isNotBlank()) appendLine("閾炬帴: ${item.bookingUrl}")
+    append("璇锋洿鏂拌绋嬶紝骞惰鏄庢渶閫傚悎鎻掑叆鍝竴澶┿€佸摢涓椂闂存銆?)
+}
+
+private fun buildBriefSummary(brief: TravelPlanningBrief?): String {
+    if (brief == null) return "鍛婅瘔鎴戠洰鐨勫湴銆佹棩鏈熴€佷汉鏁般€侀绠楀拰鍋忓ソ锛屾垜浼氭妸鐪熷疄澶╂皵銆佽矾绾垮拰鎺ㄨ崘鑱斿姩璧锋潵銆?
+    return listOf(
+        brief.destination.takeIf { it.isNotBlank() },
+        brief.origin.takeIf { it.isNotBlank() }?.let { "浠?$it 鍑哄彂" },
+        brief.dateRange.takeIf { it.isNotBlank() },
+        brief.days?.takeIf { it > 0 }?.let { "$it 澶? },
+        brief.travelerCount?.let { "$it 浜? },
+        brief.budgetText.takeIf { it.isNotBlank() } ?: brief.budgetLevel.takeIf { it.isNotBlank() },
+        brief.travelStyleTags.takeIf { it.isNotEmpty() }?.joinToString(" / "),
+        brief.transportPreferences.takeIf { it.isNotEmpty() }?.joinToString(" / ")?.let { "浜ら€氬亸濂? $it" },
+    ).filterNotNull().joinToString(" 路 ").ifBlank { brief.userIntentSummary.ifBlank { "鍑鸿淇℃伅宸插噯澶囧ソ銆? } }
+}
+
+@Composable
+private fun HomeTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    ui: TravelHubUiState,
+    weatherSummary: String,
+    onQueryChange: (String) -> Unit,
+    onSelectSuggestion: (TravelSearchSuggestion) -> Unit,
+    onStartPlanning: () -> Unit,
+    onGeneratePlan: () -> Unit,
+    onOpenHotels: () -> Unit,
+    onOpenFoods: () -> Unit,
+    onOpenActivities: () -> Unit,
+    onOpenMap: () -> Unit,
+    onOpenAi: () -> Unit,
+) {
+    val plan = conversation.travelPlan
+    val destination = plan?.brief?.destination?.ifBlank { ui.selectedDestination?.name.orEmpty() }
+        ?.ifBlank { ui.selectedDestination?.name.orEmpty() }
+        ?: ui.selectedDestination?.name.orEmpty()
+    val highlightItems = remember(plan, ui.hotels, ui.foods, ui.activities) {
+        buildList {
+            addAll((plan?.hotels ?: ui.hotels).take(1))
+            addAll((plan?.foods ?: ui.foods).take(1))
+            addAll((plan?.activities ?: ui.activities).take(2))
+        }
+    }
+    val nearbyItems = remember(plan, ui.hotels, ui.foods, ui.activities) {
+        ((plan?.activities ?: ui.activities) + (plan?.foods ?: ui.foods) + (plan?.hotels ?: ui.hotels)).distinctBy { it.id }.take(6)
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize().background(TravelBg),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item {
+            GradientHeader(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                palette = TravelPalette(TravelTeal, Color(0xFF7DDBC7), Color(0xFFE5FAF4), TravelGold),
+                smallTitle = "AI鏃呰瑙勫垝甯?,
+                title = "鏃╀笂濂斤紝鏃呰瀹讹紒",
+                subtitle = if (destination.isBlank()) "閫傚悎鍑鸿 / 鍏堥€夌洰鐨勫湴寮€濮嬭鍒? else "${destination.ifBlank { "鏈€夋嫨鐩殑鍦? }} 路 ${weatherSummary.ifBlank { "澶╂皵鑱斿姩寰呭埛鏂? }}",
+            ) {
+                HeaderHintBadge("浠婂ぉ閫傚悎鍑哄彂锛?)
+                Spacer(Modifier.height(14.dp))
+                SearchBox(
+                    value = ui.searchQuery,
+                    onValueChange = onQueryChange,
+                    placeholder = "鎼滅储鐩殑鍦般€佹櫙鐐广€佺編椋熲€?,
+                )
+                if (ui.suggestions.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    SuggestionCard(
+                        suggestions = ui.suggestions,
+                        onSelectSuggestion = onSelectSuggestion,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                HeroStatsRow(
+                    items = listOf(
+                        if (weatherSummary.isBlank()) "澶╂皵寰呭悓姝? else weatherSummary,
+                        if (destination.isBlank()) "鐩殑鍦版湭閿佸畾" else destination,
+                        buildBriefSummary(plan?.brief),
+                    ),
+                )
+            }
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "鈿?,
+                title = "蹇€熷叆鍙?,
+            )
+        }
+
+        item {
+            QuickActionGrid(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                actions = listOf(
+                    QuickAction("馃崪", "缇庨鎺ㄨ崘", onOpenFoods),
+                    QuickAction("馃彣", "浣忓棰勮", onOpenHotels),
+                    QuickAction("馃幆", "娲诲姩浣撻獙", onOpenActivities),
+                    QuickAction("馃椇", "鎺㈢储鍦板浘", onOpenMap),
+                ),
+            )
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "馃搱",
+                title = "鐑棬琛岀▼鎺ㄨ崘",
+                action = if (highlightItems.isNotEmpty()) "鏌ョ湅鍦板浘" else null,
+                onAction = if (highlightItems.isNotEmpty()) onOpenMap else null,
+            )
+        }
+
+        if (highlightItems.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "杩樻病鏈夌湡瀹炴帹鑽?,
+                    text = if (ui.isLoadingDetails) "姝ｅ湪鍔犺浇鐩殑鍦板ぉ姘斻€丳OI 鍜岃矾绾库€? else "鍏堟悳绱㈢洰鐨勫湴锛岀郴缁熶細鎶婂ぉ姘斻€佹帹鑽愬拰鍦板浘鑱斿姩璧锋潵銆?,
+                )
+            }
+        } else {
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    items(highlightItems, key = { it.id }) { item ->
+                        FeaturedRecommendationCard(
+                            item = item,
+                            modifier = Modifier.width(258.dp),
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "馃搷",
+                title = "闄勮繎鍙戠幇",
+            )
+        }
+
+        if (ui.errorMessage != null) {
+            item {
+                InfoBanner(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "澶栭儴鏁版嵁鍔犺浇寮傚父",
+                    text = ui.errorMessage,
+                    tone = Color(0xFFFFF2E8),
+                )
+            }
+        }
+
+        items(nearbyItems, key = { it.id }) { item ->
+            NearbyRecommendationRow(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                item = item,
+            )
+        }
+
+        item {
+            AssistantCtaCard(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                title = "AI琛岀▼鍔╂墜鍑嗗灏辩华",
+                text = "鍛婅瘔鎴戜綘鐨勬梾琛屾ⅵ鎯筹紝鎴戞潵甯綘瑙勫垝瀹屾暣琛岀▼锛?,
+                primaryLabel = "鐢熸垚璁″垝",
+                secondaryLabel = "寮€濮嬪～鍐?,
+                onPrimary = onGeneratePlan,
+                onSecondary = onStartPlanning,
+            )
+        }
+
+        item {
+            ActionStrip(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                actions = listOf(
+                    "鎵撳紑鍦板浘" to onOpenMap,
+                    "杩涘叆 AI" to onOpenAi,
+                    "閲嶅～闇€姹? to onStartPlanning,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun IntegratedHomeTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    ui: TravelHubUiState,
+    weatherSummary: String,
+    onQueryChange: (String) -> Unit,
+    onSelectSuggestion: (TravelSearchSuggestion) -> Unit,
+    onStartPlanning: () -> Unit,
+    onGeneratePlan: () -> Unit,
+    onOpenHotels: () -> Unit,
+    onOpenFoods: () -> Unit,
+    onOpenActivities: () -> Unit,
+    onOpenMap: () -> Unit,
+    onOpenAi: () -> Unit,
+    onOpenItinerary: () -> Unit,
+    onOpenMine: () -> Unit,
+) {
+    val plan = conversation.travelPlan
+    val destination = plan?.brief?.destination?.ifBlank { ui.selectedDestination?.name.orEmpty() }
+        ?.ifBlank { ui.selectedDestination?.name.orEmpty() }
+        ?: ui.selectedDestination?.name.orEmpty()
+    val highlightItems = remember(plan, ui.hotels, ui.foods, ui.activities) {
+        buildList {
+            addAll((plan?.hotels ?: ui.hotels).take(1))
+            addAll((plan?.foods ?: ui.foods).take(1))
+            addAll((plan?.activities ?: ui.activities).take(2))
+        }
+    }
+    val nearbyItems = remember(plan, ui.hotels, ui.foods, ui.activities) {
+        ((plan?.activities ?: ui.activities) + (plan?.foods ?: ui.foods) + (plan?.hotels ?: ui.hotels))
+            .distinctBy { it.id }
+            .take(6)
+    }
+    val summaryText = remember(plan) { plan.toTravelSummaryText() }
+    val headerSubtitle = if (destination.isBlank()) "鍦ㄧ嚎瀹堟姢" else "$destination 路 鏃呴€旇繘琛屼腑"
+    val weatherText = weatherSummary.ifBlank {
+        plan?.itineraryDays?.firstOrNull()?.weatherHint?.ifBlank { "鐢熸垚琛岀▼鍚庢樉绀哄ぉ姘斾笌鍑鸿寤鸿" }
+            ?: "鐢熸垚琛岀▼鍚庢樉绀哄ぉ姘斾笌鍑鸿寤鸿"
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize().background(TravelBg),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    color = Color.White.copy(alpha = 0.78f),
+                    shape = RoundedCornerShape(26.dp),
+                    tonalElevation = 1.dp,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Surface(
+                                modifier = Modifier.clickable(onClick = onOpenMine),
+                                shape = CircleShape,
+                                color = Color.White,
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(
+                                            brush = Brush.linearGradient(listOf(TravelTeal, TravelBlue)),
+                                            shape = CircleShape,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text("ME", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                                }
+                            }
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("OASIS AI", fontWeight = FontWeight.ExtraBold, color = Color(0xFF1F2937))
+                                Text(headerSubtitle, color = TravelTealDeep, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        Surface(
+                            modifier = Modifier.clickable(onClick = onOpenMap),
+                            color = TravelTeal,
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Text(
+                                "鍦板浘",
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(28.dp),
+                    tonalElevation = 1.dp,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        SearchBox(
+                            value = ui.searchQuery,
+                            onValueChange = onQueryChange,
+                            placeholder = "杈撳叆浣犳兂鍘荤殑鍦版柟...",
+                        )
+                        if (ui.suggestions.isNotEmpty()) {
+                            SuggestionCard(
+                                suggestions = ui.suggestions,
+                                onSelectSuggestion = onSelectSuggestion,
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            HomeShortcutChip("琛岀▼", onOpenItinerary)
+                            HomeShortcutChip("浣忓", onOpenHotels)
+                            HomeShortcutChip("椁愰ギ", onOpenFoods)
+                            HomeShortcutChip("鎺ㄨ崘", onOpenActivities)
+                            HomeShortcutChip("AI", onOpenAi)
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Surface(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                shape = RoundedCornerShape(30.dp),
+                color = Color.Transparent,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .background(Brush.linearGradient(listOf(Color(0xFF0F172A), Color(0xFF1D4ED8))))
+                        .padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Weather", color = Color.White.copy(alpha = 0.72f), style = MaterialTheme.typography.bodySmall)
+                            Text(weatherText, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+                        }
+                        TinyActionButton("Map", onClick = onOpenMap, enabled = true)
+                    }
+                    Surface(
+                        color = Color.White.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                if (destination.isBlank()) "杩樻病鏈夐攣瀹氱洰鐨勫湴" else destination,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                if (summaryText.isBlank()) buildBriefSummary(plan?.brief) else summaryText,
+                                color = Color.White.copy(alpha = 0.88f),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            if (plan == null || plan.itineraryDays.isEmpty()) {
+                EmptyStateCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "Itinerary",
+                    text = "杩樻病鏈夌敓鎴愬畬鏁磋绋嬶紝鍏堣緭鍏ョ洰鐨勫湴鎴栬 AI 甯綘瑙勫垝銆?,
+                )
+            } else {
+                Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = Color.White,
+                    shape = RoundedCornerShape(26.dp),
+                    tonalElevation = 1.dp,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                plan.brief?.destination?.ifBlank { "Travel plan" } ?: "Travel plan",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                            )
+                            SmallStatusPill("Ready", TravelTealDeep)
+                        }
+                        plan.itineraryDays.take(2).forEach { day ->
+                            Surface(
+                                color = Color(0xFFF8FAFC),
+                                shape = RoundedCornerShape(18.dp),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text("Day ${day.dayIndex}: ${day.title}", fontWeight = FontWeight.Bold, color = TravelTealDeep)
+                                    day.items.take(3).forEach { item ->
+                                        Text(
+                                            "${item.timeSlot.ifBlank { "鏃舵寰呭畾" }} ${item.title}",
+                                            color = TravelTextMuted,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Button(
+                            onClick = onOpenItinerary,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDFF7F1), contentColor = TravelTealDeep),
+                        ) {
+                            Text("鏌ョ湅瀹屾暣琛岀▼")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (highlightItems.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "杩樻病鏈夋帹鑽愬唴瀹?,
+                    text = if (ui.isLoadingDetails) "姝ｅ湪鍔犺浇鐩殑鍦拌鎯呫€佸湴鍥剧偣浣嶅拰鎺ㄨ崘鏁版嵁銆? else "鍏堟悳绱㈢洰鐨勫湴锛岀郴缁熶細鎶婂ぉ姘斻€佹帹鑽愬拰鍦板浘鑱斿姩璧锋潵銆?,
+                )
+            }
+        } else {
+            item {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SectionTitle(
+                        icon = "鉁?,
+                        title = "鎺ㄨ崘绮鹃€?,
+                        action = "鎵撳紑鍦板浘",
+                        onAction = onOpenMap,
+                    )
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(highlightItems, key = { it.id }) { item ->
+                            FeaturedRecommendationCard(
+                                item = item,
+                                modifier = Modifier.width(258.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "馃Л",
+                title = "闄勮繎鍙戠幇",
+            )
+        }
+
+        if (ui.errorMessage != null) {
+            item {
+                InfoBanner(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "澶栭儴鏁版嵁鍔犺浇寮傚父",
+                    text = ui.errorMessage,
+                    tone = Color(0xFFFFF2E8),
+                )
+            }
+        }
+
+        items(nearbyItems, key = { it.id }) { item ->
+            NearbyRecommendationRow(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                item = item,
+            )
+        }
+
+        item {
+            AssistantCtaCard(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                title = "AI 鏃呰鍔╂墜鍑嗗灏辩华",
+                text = "鍛婅瘔鎴戜綘鐨勭洰鐨勫湴銆佹椂闂村拰鍋忓ソ锛屾垜浼氭妸澶╂皵銆佽矾绾夸笌鎺ㄨ崘涓€璧锋暣鐞嗘垚瀹屾暣璁″垝銆?,
+                primaryLabel = "鐢熸垚璁″垝",
+                secondaryLabel = "琛ュ厖闇€姹?,
+                onPrimary = onGeneratePlan,
+                onSecondary = onStartPlanning,
+            )
+        }
+
+        item {
+            ActionStrip(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                actions = listOf(
+                    "鎵撳紑鍦板浘" to onOpenMap,
+                    "杩涘叆 AI" to onOpenAi,
+                    "鏌ョ湅琛岀▼" to onOpenItinerary,
+                    "鎴戠殑" to onOpenMine,
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeShortcutChip(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        color = Color(0xFFF8FAFC),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            color = Color(0xFF4B5563),
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun MapTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    ui: TravelHubUiState,
+    mapPois: List<TravelPoi>,
+    highlightPoiId: String?,
+    onQueryChange: (String) -> Unit,
+    onSelectSuggestion: (TravelSearchSuggestion) -> Unit,
+    onSelectFilter: (String) -> Unit,
+) {
+    val nav = LocalNavController.current
+    var isMapExpanded by rememberSaveable(conversation.id.toString()) {
+        mutableStateOf(false)
+    }
+    var activePoiId by rememberSaveable(conversation.id.toString(), highlightPoiId) {
+        mutableStateOf(highlightPoiId)
+    }
+    LaunchedEffect(mapPois.map { it.id }, activePoiId, highlightPoiId) {
+        if (mapPois.isEmpty()) {
+            activePoiId = null
+        } else if (activePoiId == null || mapPois.none { it.id == activePoiId }) {
+            activePoiId = highlightPoiId?.takeIf { target -> mapPois.any { it.id == target } } ?: mapPois.first().id
+        }
+    }
+    if (isMapExpanded) {
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .background(TravelBg)
+                .statusBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TinyActionButton("鈫?杩斿洖", onClick = { isMapExpanded = false }, enabled = true)
+                Text(
+                    text = conversation.travelPlan?.brief?.destination?.ifBlank { "鍦板浘" } ?: "鍦板浘",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TravelTealDeep,
+                    fontWeight = FontWeight.Bold,
+                )
+                SmallStatusPill(text = "鍏ㄥ睆", color = TravelTealDeep)
+            }
+            MapSearchControls(
+                ui = ui,
+                onQueryChange = onQueryChange,
+                onSelectSuggestion = onSelectSuggestion,
+                onSelectFilter = onSelectFilter,
+            )
+            MapViewport(
+                modifier = Modifier.weight(1f),
+                nav = nav,
+                mapPois = mapPois,
+                activePoiId = activePoiId,
+                expandLabel = null,
+                onExpandToggle = null,
+            )
+            if (mapPois.isNotEmpty()) {
+                MapPoiCarousel(
+                    mapPois = mapPois,
+                    activePoiId = activePoiId,
+                    onSelectPoi = { activePoiId = it },
+                )
+            }
+        }
+    } else {
+    Column(
+        modifier = modifier.fillMaxSize().background(TravelBg),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (false) GradientHeader(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            palette = TravelPalette(Color(0xFF9EDFD2), Color(0xFFD9F8EE), Color(0xFFEFFCF7), TravelTealDeep),
+            smallTitle = "鎺㈢储鍦板浘",
+            title = conversation.travelPlan?.brief?.destination?.ifBlank { "鏃呰鍦板浘" } ?: "鏃呰鍦板浘",
+            subtitle = "鐪熷疄 POI銆佽矾绾夸笌琛岀▼鑱斿姩",
+        ) {
+            SearchBox(
+                value = ui.searchQuery,
+                onValueChange = onQueryChange,
+                placeholder = "鎼滅储鍦扮偣鈥?,
+            )
+            if (ui.suggestions.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                SuggestionCard(
+                    suggestions = ui.suggestions,
+                    onSelectSuggestion = onSelectSuggestion,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            ChipRow(
+                chips = listOf("浣忓", "缇庨", "娲诲姩", "璺嚎"),
+                selected = mapFilterLabel(ui.selectedMapFilter),
+                onSelect = { label -> onSelectFilter(mapFilterValue(label)) },
+            )
+        }
+
+        Surface(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            color = Color.White.copy(alpha = 0.96f),
+            shape = RoundedCornerShape(22.dp),
+            tonalElevation = 2.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = "鎺㈢储鍦板浘",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TravelTealDeep,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = conversation.travelPlan?.brief?.destination?.ifBlank { "鏃呰鍦板浘" } ?: "鏃呰鍦板浘",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TravelTextMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TinyActionButton("鍏ㄥ睆", onClick = { isMapExpanded = true }, enabled = true)
+                }
+                MapSearchControls(
+                    ui = ui,
+                    onQueryChange = onQueryChange,
+                    onSelectSuggestion = onSelectSuggestion,
+                    onSelectFilter = onSelectFilter,
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .weight(1.8f)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Color.White,
+                shape = RoundedCornerShape(28.dp),
+                tonalElevation = 2.dp,
+            ) {
+                ChatMapDrawerContent(
+                    modifier = Modifier.fillMaxSize(),
+                    travelPois = mapPois,
+                    highlightPoiId = activePoiId,
+                    showBottomPanel = false,
+                    onOpenInternalWebView = { url -> nav.navigate(Screen.WebView(url = url)) },
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 14.dp, end = 14.dp),
+            ) {
+                TinyActionButton("鏀惧ぇ", onClick = { isMapExpanded = true }, enabled = true)
+            }
+
+            if (mapPois.isNotEmpty()) {
+                MapPoiCarousel(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 6.dp),
+                    mapPois = mapPois,
+                    activePoiId = activePoiId,
+                    onSelectPoi = { activePoiId = it },
+                )
+            }
+
+            if (mapPois.isEmpty()) {
+                EmptyStateCard(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp),
+                    title = "鍦板浘涓婅繕娌℃湁 POI",
+                    text = "鎼滅储鍦扮偣鎴栧厛鐢熸垚琛岀▼锛岀郴缁熶細鎶婃帹鑽愮偣浣嶅悓姝ュ埌鍦板浘銆?,
+                )
+            }
+        }
+
+        if (false && mapPois.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(mapPois, key = { it.id }) { poi ->
+                    Surface(
+                        modifier = Modifier
+                            .width(210.dp)
+                            .clickable { activePoiId = poi.id },
+                        color = Color.White,
+                        shape = RoundedCornerShape(20.dp),
+                        tonalElevation = 1.dp,
+                        border = if (activePoiId == poi.id) androidx.compose.foundation.BorderStroke(1.5.dp, TravelTeal) else null,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(poi.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                text = listOf(poi.category, poi.address).filter { it.isNotBlank() }.joinToString(" 路 ").ifBlank { "绛夊緟鏇村鍦板浘璇︽儏" },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TravelTextMuted,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    }
+}
+
+@Composable
+private fun MapSearchControls(
+    ui: TravelHubUiState,
+    onQueryChange: (String) -> Unit,
+    onSelectSuggestion: (TravelSearchSuggestion) -> Unit,
+    onSelectFilter: (String) -> Unit,
+) {
+    SearchBox(
+        value = ui.searchQuery,
+        onValueChange = onQueryChange,
+        placeholder = "鎼滅储鍦扮偣銆佹櫙鐐规垨缇庨",
+    )
+    if (ui.suggestions.isNotEmpty()) {
+        Spacer(Modifier.height(10.dp))
+        SuggestionCard(
+            suggestions = ui.suggestions,
+            onSelectSuggestion = onSelectSuggestion,
+        )
+    }
+    Spacer(Modifier.height(12.dp))
+    ChipRow(
+        chips = listOf("浣忓", "缇庨", "娲诲姩", "璺嚎"),
+        selected = mapFilterLabel(ui.selectedMapFilter),
+        onSelect = { label -> onSelectFilter(mapFilterValue(label)) },
+    )
+}
+
+@Composable
+private fun MapViewport(
+    modifier: Modifier = Modifier,
+    nav: Navigator,
+    mapPois: List<TravelPoi>,
+    activePoiId: String?,
+    showBottomPanel: Boolean = false,
+    expandLabel: String? = null,
+    onExpandToggle: (() -> Unit)? = null,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth(),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = Color.White,
+            shape = RoundedCornerShape(28.dp),
+            tonalElevation = 2.dp,
+        ) {
+            ChatMapDrawerContent(
+                modifier = Modifier.fillMaxSize(),
+                travelPois = mapPois,
+                highlightPoiId = activePoiId,
+                showBottomPanel = showBottomPanel,
+                onOpenInternalWebView = { url -> nav.navigate(Screen.WebView(url = url)) },
+            )
+        }
+
+        if (!expandLabel.isNullOrBlank() && onExpandToggle != null) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 14.dp, end = 14.dp),
+            ) {
+                TinyActionButton(expandLabel, onClick = onExpandToggle, enabled = true)
+            }
+        }
+
+        if (mapPois.isEmpty()) {
+            EmptyStateCard(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp),
+                title = "鍦板浘涓婅繕娌℃湁 POI",
+                text = "鍏堟悳绱㈢洰鐨勫湴鎴栫敓鎴愯绋嬶紝鍦板浘浼氬悓姝ュ睍绀哄綋鍓嶅彲鐢ㄧ偣浣嶃€?,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MapPoiCarousel(
+    modifier: Modifier = Modifier,
+    mapPois: List<TravelPoi>,
+    activePoiId: String?,
+    onSelectPoi: (String) -> Unit,
+) {
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(mapPois, key = { it.id }) { poi ->
+            Surface(
+                modifier = Modifier
+                    .width(210.dp)
+                    .clickable { onSelectPoi(poi.id) },
+                color = Color.White,
+                shape = RoundedCornerShape(20.dp),
+                tonalElevation = 1.dp,
+                border = if (activePoiId == poi.id) androidx.compose.foundation.BorderStroke(1.5.dp, TravelTeal) else null,
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = poi.name,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = listOf(poi.category, poi.address)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" 璺?")
+                            .ifBlank { "绛夊緟鏇村鍦板浘璇︽儏" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TravelTextMuted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IntegratedItineraryTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    onStartPlanning: () -> Unit,
+    onOpenAi: () -> Unit,
+    onOpenMap: () -> Unit,
+    onExportTrip: () -> Unit,
+    onShareTrip: () -> Unit,
+) {
+    val plan = conversation.travelPlan
+    val days = plan?.itineraryDays.orEmpty()
+    val destination = plan?.brief?.destination?.ifBlank { "My Trip" } ?: "My Trip"
+    var selectedDayIndex by rememberSaveable(conversation.id.toString()) {
+        mutableStateOf(days.firstOrNull()?.dayIndex ?: 1)
+    }
+
+    LaunchedEffect(days.map { it.dayIndex }) {
+        if (days.isNotEmpty() && days.none { it.dayIndex == selectedDayIndex }) {
+            selectedDayIndex = days.first().dayIndex
+        }
+    }
+
+    val selectedDay = days.firstOrNull { it.dayIndex == selectedDayIndex } ?: days.firstOrNull()
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(TravelBg),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            GradientHeader(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE1F8F2), TravelGold),
+                smallTitle = "ITINERARY",
+                title = destination,
+                subtitle = buildBriefSummary(plan?.brief),
+            ) {
+                HeroStatsRow(
+                    listOf(
+                        "${(plan?.brief?.days ?: days.size).coerceAtLeast(days.size)} days",
+                        if (plan?.pois.isNullOrEmpty()) "POI pending" else "${plan?.pois.orEmpty().size} POIs",
+                        travelPlanningStateLabel(conversation.travelPlanningState),
+                    ),
+                )
+                Spacer(Modifier.height(12.dp))
+                HeaderActionRow(
+                    leftLabel = "Ask AI",
+                    rightLabel = "Map",
+                    onLeft = onOpenAi,
+                    onRight = onOpenMap,
+                )
+            }
+        }
+
+        if (days.isEmpty()) {
+            item {
+                AssistantCtaCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "No detailed itinerary yet",
+                    text = "Add destination and preferences first, then generate daily schedule, weather hints, and route suggestions.",
+                    primaryLabel = "Generate now",
+                    secondaryLabel = "Open AI",
+                    onPrimary = onStartPlanning,
+                    onSecondary = onOpenAi,
+                )
+            }
+        } else {
+            item {
+                ItineraryPreviewCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    destination = destination,
+                    day = selectedDay,
+                    planningState = travelPlanningStateLabel(conversation.travelPlanningState),
+                    onOpenMap = onOpenMap,
+                    onStartPlanning = onStartPlanning,
+                )
+            }
+
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(days, key = { it.dayIndex }) { day ->
+                        DayChip(
+                            title = "Day ${day.dayIndex}",
+                            selected = day.dayIndex == selectedDayIndex,
+                            onClick = { selectedDayIndex = day.dayIndex },
+                        )
+                    }
+                }
+            }
+
+            selectedDay?.let { day ->
+                item {
+                    DayTimelineCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        day = day,
+                    )
+                }
+
+                item {
+                    WeatherStrip(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        days = days,
+                    )
+                }
+
+                item {
+                    AiAdviceCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        day = day,
+                        onOpenAi = onOpenAi,
+                    )
+                }
+            }
+
+            item {
+                ActionStrip(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    actions = listOf(
+                        "Replan" to onStartPlanning,
+                        "Export" to onExportTrip,
+                        "Share" to onShareTrip,
+                        "Map" to onOpenMap,
+                        "AI" to onOpenAi,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ItineraryPreviewCard(
+    modifier: Modifier = Modifier,
+    destination: String,
+    day: TravelItineraryDay?,
+    planningState: String,
+    onOpenMap: () -> Unit,
+    onStartPlanning: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(26.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = destination,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                    Text(
+                        text = day?.title?.ifBlank { "Day ${day.dayIndex}" } ?: "Waiting for itinerary preview",
+                        color = TravelTextMuted,
+                    )
+                }
+                SmallStatusPill(text = planningState, color = TravelTealDeep)
+            }
+
+            Surface(
+                color = Color(0xFFF8FCFB),
+                shape = RoundedCornerShape(22.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, TravelLine),
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        text = day?.dateText?.ifBlank { "Weather and timing aligned" }
+                            ?: "Generated plan will automatically include weather and timing guidance.",
+                        color = TravelTextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    day?.items?.take(4)?.forEachIndexed { index, item ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "${index + 1}. ${item.title}",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            val detail = listOf(
+                                item.timeSlot.takeIf { it.isNotBlank() },
+                                item.description.takeIf { it.isNotBlank() },
+                            ).filterNotNull().joinToString(" | ")
+                            if (detail.isNotBlank()) {
+                                Text(
+                                    text = detail,
+                                    color = TravelTextMuted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    if (day?.items.isNullOrEmpty()) {
+                        Text(
+                            text = "No detailed activities for this day yet. Replan or continue filling details in AI.",
+                            color = TravelTextMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onStartPlanning,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
+                ) {
+                    Text("Replan")
+                }
+                Button(
+                    onClick = onOpenMap,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = TravelOrange),
+                ) {
+                    Text("View map")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IntegratedAiTab(
+    modifier: Modifier,
+    vm: ChatVM,
+    conversation: Conversation,
+    nodeId: Uuid?,
+    onOpenItinerary: () -> Unit,
+    onOpenMap: () -> Unit,
+    onOpenHotels: () -> Unit,
+    onOpenFoods: () -> Unit,
+    onOpenActivities: () -> Unit,
+) {
+    var input by rememberSaveable(conversation.id.toString()) { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    ImeLazyListAutoScroller(listState)
+    val focusNode = nodeId?.let { target -> conversation.currentMessages.firstOrNull { it.id == target } }
+    val shortcutPrompts = listOf(
+        "Spots" to "Recommend the best places to visit today for my current destination.",
+        "Food" to "Recommend nearby food options that fit my current destination and plan.",
+        "Stay" to "Suggest a better accommodation option based on my current itinerary.",
+        "Optimize today" to "Optimize today's itinerary with a more reasonable route and schedule.",
+    )
+
+    LaunchedEffect(conversation.currentMessages.size) {
+        val lastIndex = conversation.currentMessages.lastIndex
+        if (lastIndex >= 0) {
+            listState.animateScrollToItem(lastIndex)
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(TravelBg)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(
+            color = Color.White,
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 1.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(TravelTeal, TravelBlue, Color(0xFFA855F7)),
+                                    ),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("AI", color = Color.White, fontWeight = FontWeight.ExtraBold)
+                        }
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("OASIS AI", fontWeight = FontWeight.ExtraBold)
+                            Text(
+                                text = buildBriefSummary(conversation.travelPlan?.brief),
+                                color = TravelTextMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    SmallStatusPill(
+                        text = travelPlanningStateLabel(conversation.travelPlanningState),
+                        color = TravelTealDeep,
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    HomeShortcutChip(label = "Itinerary", onClick = onOpenItinerary)
+                    HomeShortcutChip(label = "Map", onClick = onOpenMap)
+                    HomeShortcutChip(label = "Hotels", onClick = onOpenHotels)
+                    HomeShortcutChip(label = "Food", onClick = onOpenFoods)
+                    HomeShortcutChip(label = "Explore", onClick = onOpenActivities)
+                }
+            }
+        }
+
+        if (focusNode != null) {
+            InfoBanner(
+                title = "Focused message",
+                text = focusNode.toText(),
+                tone = Color(0xFFE8F8F3),
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            shortcutPrompts.forEach { (label, prompt) ->
+                HomeShortcutChip(
+                    label = label,
+                    onClick = { sendTravelAiPrompt(vm, conversation, prompt) },
+                )
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            state = listState,
+            contentPadding = PaddingValues(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(conversation.currentMessages, key = { it.id.toString() }) { message ->
+                val isUser = message.role == MessageRole.USER
+                val textContent = message.toText().ifBlank {
+                    if (isUser) "(empty message)" else "(non-text message)"
+                }
+                if (isUser) {
+                    UserChatBubble(text = textContent)
+                } else {
+                    AssistantChatBubble(text = textContent)
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .imePadding()
+                .navigationBarsPadding(),
+            color = Color.White,
+            shape = RoundedCornerShape(28.dp),
+            tonalElevation = 1.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    placeholder = { Text("Enter destination, constraints, or what you want to adjust...") },
+                    shape = RoundedCornerShape(20.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            if (input.isBlank()) return@Button
+                            sendTravelAiPrompt(vm, conversation, input)
+                            input = ""
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
+                    ) {
+                        Text("Send")
+                    }
+                    Button(
+                        onClick = { vm.generateTravelPlan() },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = TravelOrange),
+                    ) {
+                        Text("Generate plan")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssistantChatBubble(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 6.dp, end = 8.dp)
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.linearGradient(
+                        listOf(TravelTeal, TravelBlue, Color(0xFFA855F7)),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "AI",
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+            )
+        }
+        Surface(
+            modifier = Modifier.width(292.dp),
+            color = Color.White,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 6.dp),
+            tonalElevation = 1.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDF0EA)),
+        ) {
+            MarkdownBlock(
+                content = text,
+                modifier = Modifier.padding(14.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun UserChatBubble(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(292.dp)
+                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp, bottomStart = 20.dp, bottomEnd = 6.dp))
+                .background(Brush.linearGradient(listOf(TravelTeal, TravelBlueDeep)))
+                .padding(14.dp),
+        ) {
+            Text(text = text, color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun ProfileIntegratedMineTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    historyConversationCount: Int,
+    historyConversations: List<TravelHistoryConversationSummary>,
+    historyTrips: List<TravelHistoryTripSummary>,
+    favoriteItems: List<TravelFavoriteSummary>,
+    currentTripSummary: TravelCurrentTripSummary?,
+    onOpenCurrentTrip: () -> Unit,
+    onOpenHistoryConversation: (String) -> Unit,
+    onOpenHistoryTrip: (String) -> Unit,
+    onOpenFavoriteItem: (TravelFavoriteSummary) -> Unit,
+) {
+    val plan = conversation.travelPlan
+    val nav = LocalNavController.current
+    val context = LocalContext.current
+    val destination = plan?.brief?.destination?.ifBlank { "Traveling" } ?: "Traveling"
+    val stats = listOf(
+        "History" to historyConversationCount.toString(),
+        "Favorites" to favoriteItems.size.toString(),
+        "Days" to (plan?.brief?.days ?: plan?.itineraryDays.orEmpty().size).toString(),
+    )
+    var profileTab by rememberSaveable(conversation.id.toString()) { mutableStateOf("history") }
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .background(TravelBg),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            GradientHeader(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE0F7F1), TravelGold),
+                smallTitle = "PROFILE",
+                title = "Traveler",
+                subtitle = "$destination | native integrated page",
+            ) {
+                HeroStatsRow(stats.map { "${it.first} ${it.second}" })
+                Spacer(Modifier.height(12.dp))
+                HeaderActionRow(
+                    leftLabel = "Settings",
+                    rightLabel = "More",
+                    onLeft = { nav.navigate(Screen.Setting) },
+                    onRight = { nav.navigate(Screen.SettingAbout) },
+                )
+            }
+        }
+
+        if (currentTripSummary != null) {
+            item {
+                CurrentTripCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = currentTripSummary.title,
+                    subtitle = currentTripSummary.summary,
+                    onClick = onOpenCurrentTrip,
+                )
+            }
+        }
+
+        item {
+            Surface(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = Color.White,
+                shape = RoundedCornerShape(24.dp),
+                tonalElevation = 1.dp,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ProfileTabButton(
+                        modifier = Modifier.weight(1f),
+                        label = "History",
+                        selected = profileTab == "history",
+                        onClick = { profileTab = "history" },
+                    )
+                    ProfileTabButton(
+                        modifier = Modifier.weight(1f),
+                        label = "Favorites",
+                        selected = profileTab == "favorites",
+                        onClick = { profileTab = "favorites" },
+                    )
+                }
+            }
+        }
+
+        if (profileTab == "history") {
+            item {
+                SectionTitle(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    icon = "H",
+                    title = "History conversations",
+                    action = "All",
+                    onAction = { nav.navigate(Screen.History) },
+                )
+            }
+
+            if (historyConversations.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        title = "No history conversations yet",
+                        text = "After you finish a travel plan, recent sessions, resumable itineraries, and favorite entries will appear here.",
+                    )
+                }
+            } else {
+                historyConversations.forEach { historyConversation ->
+                    item {
+                        HistoryConversationCard(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            item = historyConversation,
+                            onClick = { onOpenHistoryConversation(historyConversation.id) },
+                        )
+                    }
+                }
+            }
+
+            if (historyTrips.isNotEmpty()) {
+                item {
+                    SectionTitle(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        icon = "T",
+                        title = "History trips",
+                    )
+                }
+                historyTrips.forEach { historyTrip ->
+                    item {
+                        HistoryTripCard(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            item = historyTrip,
+                            onClick = { onOpenHistoryTrip(historyTrip.conversationId) },
+                        )
+                    }
+                }
+            }
+
+            item {
+                ProfileActionEntry(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "Travel preferences",
+                    subtitle = "Account, preferences, and default rules",
+                    onClick = { nav.navigate(Screen.Setting) },
+                )
+            }
+        } else {
+            item {
+                SectionTitle(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    icon = "F",
+                    title = "Favorites",
+                    action = "Manage",
+                    onAction = { nav.navigate(Screen.Favorite) },
+                )
+            }
+
+            if (favoriteItems.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        title = "No favorites yet",
+                        text = "After generating an itinerary, you can keep favorites from hotels, food, activities, or message nodes.",
+                    )
+                }
+            } else {
+                favoriteItems.groupBy { it.category }.forEach { (category, itemsForCategory) ->
+                    item {
+                        SectionTitle(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            icon = when (category) {
+                                "hotel" -> "H"
+                                "food" -> "F"
+                                "activity" -> "A"
+                                else -> "*"
+                            },
+                            title = category.ifBlank { "other" },
+                        )
+                    }
+                    itemsForCategory.forEach { favoriteItem ->
+                        item {
+                            FavoriteSummaryCard(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                item = favoriteItem,
+                                onClick = { onOpenFavoriteItem(favoriteItem) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Surface(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = Color.White,
+                    shape = RoundedCornerShape(26.dp),
+                    tonalElevation = 1.dp,
+                ) {
+                    Column {
+                        MineRow("My favorites", "${favoriteItems.size} items", enabled = true, onClick = { nav.navigate(Screen.Favorite) })
+                        MineRow("History sessions", "$historyConversationCount items", enabled = true, onClick = { nav.navigate(Screen.History) })
+                        MineRow(
+                            "System settings",
+                            "Account and privacy",
+                            enabled = true,
+                            onClick = { nav.navigate(Screen.Setting) },
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .clickable { Toast.makeText(context, "Logout is not connected yet", Toast.LENGTH_SHORT).show() },
+                color = Color(0xFFEFF9F5),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Text(
+                    text = "Logout",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 18.dp),
+                    color = TravelTealDeep,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileTabButton(
+    modifier: Modifier = Modifier,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = if (selected) TravelTeal else Color(0xFFF8FAFC),
+        shape = RoundedCornerShape(18.dp),
+        tonalElevation = if (selected) 1.dp else 0.dp,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(vertical = 12.dp),
+            color = if (selected) Color.White else Color(0xFF4B5563),
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+@Composable
+private fun ProfileActionEntry(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(text = title, fontWeight = FontWeight.Bold)
+            Text(text = subtitle, color = TravelTextMuted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+@Composable
+private fun LegacyItineraryTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    onStartPlanning: () -> Unit,
+    onOpenAi: () -> Unit,
+    onExportTrip: () -> Unit,
+    onShareTrip: () -> Unit,
+) {
+    val plan = conversation.travelPlan
+    val days = plan?.itineraryDays.orEmpty()
+    var selectedDayIndex by rememberSaveable(conversation.id.toString()) {
+        mutableStateOf(days.firstOrNull()?.dayIndex ?: 1)
+    }
+
+    LaunchedEffect(days.map { it.dayIndex }) {
+        if (days.isNotEmpty() && days.none { it.dayIndex == selectedDayIndex }) {
+            selectedDayIndex = days.first().dayIndex
+        }
+    }
+
+    val selectedDay = days.firstOrNull { it.dayIndex == selectedDayIndex } ?: days.firstOrNull()
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize().background(TravelBg),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            GradientHeader(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE1F8F2), TravelGold),
+                smallTitle = "琛岀▼瑙勫垝",
+                title = plan?.brief?.destination?.ifBlank { "鎴戠殑琛岀▼" } ?: "鎴戠殑琛岀▼",
+                subtitle = buildBriefSummary(plan?.brief),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = selectedDay?.title?.ifBlank { "Day ${selectedDay?.dayIndex ?: 1}" } ?: "绛夊緟鐢熸垚琛岀▼",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = selectedDay?.dateText?.ifBlank { "鐪熷疄澶╂皵涓庤矾绾夸細鍚屾鍐欏叆" }
+                                ?: "鐢熸垚瀹屾垚鍚庝細鏄剧ず鐪熷疄澶╂皵涓庤矾绾跨害鏉?,
+                            color = Color.White.copy(alpha = 0.92f),
+                        )
+                    }
+                    HeaderHintBadge(
+                        text = travelPlanningStateLabel(conversation.travelPlanningState),
+                    )
+                }
+            }
+        }
+
+        if (days.isEmpty()) {
+            item {
+                AssistantCtaCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "杩樻病鏈夎缁嗚绋?,
+                    text = "閫夊ソ鐩殑鍦板悗鐐瑰嚮鐢熸垚锛岀郴缁熶細鎶婄湡瀹炲ぉ姘斿拰璺嚎鎻愮ず鍐欒繘姣忎竴澶┿€?,
+                    primaryLabel = "绔嬪嵆鐢熸垚",
+                    secondaryLabel = "鎵撳紑 AI",
+                    onPrimary = onStartPlanning,
+                    onSecondary = onOpenAi,
+                )
+            }
+        } else {
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(days, key = { it.dayIndex }) { day ->
+                        DayChip(
+                            title = "Day${day.dayIndex}",
+                            selected = day.dayIndex == selectedDayIndex,
+                            onClick = { selectedDayIndex = day.dayIndex },
+                        )
+                    }
+                }
+            }
+
+            selectedDay?.let { day ->
+                item {
+                    DayTimelineCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        day = day,
+                    )
+                }
+
+                item {
+                    WeatherStrip(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        days = days,
+                    )
+                }
+
+                item {
+                    AiAdviceCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        day = day,
+                        onOpenAi = onOpenAi,
+                    )
+                }
+            }
+
+            item {
+                ActionStrip(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    actions = listOf(
+                        "瀵煎嚭琛岀▼" to onExportTrip,
+                        "鍒嗕韩琛岀▼" to onShareTrip,
+                        "鎵撳紑 AI" to onOpenAi,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegacyAiTab(
+    modifier: Modifier,
+    vm: ChatVM,
+    conversation: Conversation,
+    nodeId: Uuid?,
+    onOpenItinerary: () -> Unit,
+) {
+    var input by rememberSaveable(conversation.id.toString()) { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    ImeLazyListAutoScroller(listState)
+    val focusNode = nodeId?.let { target -> conversation.currentMessages.firstOrNull { it.id == target } }
+    val shortcutPrompts = listOf(
+        "鎺ㄨ崘鏅偣",
+        "缇庨鎺ㄨ崘",
+        "浣忓寤鸿",
+        "浼樺寲浠婂ぉ琛岀▼",
+    )
+
+    LaunchedEffect(conversation.currentMessages.size) {
+        val lastIndex = conversation.currentMessages.lastIndex
+        if (lastIndex >= 0) {
+            listState.animateScrollToItem(lastIndex)
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(TravelBg)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        GradientHeader(
+            modifier = Modifier.fillMaxWidth(),
+            palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE0F8F1), TravelMint),
+            smallTitle = "馃 灏忓悏",
+            title = "AI鏃呰鍔╂墜",
+            subtitle = buildBriefSummary(conversation.travelPlan?.brief),
+        ) {
+            HeaderActionRow(
+                leftLabel = "杩斿洖琛岀▼",
+                rightLabel = travelPlanningStateLabel(conversation.travelPlanningState),
+                onLeft = onOpenItinerary,
+                onRight = {},
+                rightEnabled = false,
+            )
+        }
+
+        if (focusNode != null) {
+            InfoBanner(
+                title = "褰撳墠鑱氱劍娑堟伅",
+                text = focusNode.toText(),
+                tone = Color(0xFFE8F8F3),
+            )
+        }
+
+        ChipRow(
+            chips = shortcutPrompts,
+            selected = null,
+            onSelect = { prompt ->
+                val realPrompt = when (prompt) {
+                    "鎺ㄨ崘鏅偣" -> "璇锋牴鎹垜褰撳墠鐩殑鍦版帹鑽愪粖澶╂渶鍊煎緱鍘荤殑鏅偣銆?
+                    "缇庨鎺ㄨ崘" -> "璇锋牴鎹垜褰撳墠鐩殑鍦版帹鑽愰檮杩戞渶鍊煎緱鍚冪殑缇庨銆?
+                    "浣忓寤鸿" -> "璇锋牴鎹垜褰撳墠鐩殑鍦版帹鑽愭洿閫傚悎鎴戠殑浣忓鏂规銆?
+                    else -> "璇蜂紭鍖栦粖澶╃殑鏃呰琛岀▼锛岃ˉ鍏呮洿鍚堢悊鐨勮矾绾垮拰鏃堕棿瀹夋帓銆?
+                }
+                sendTravelAiPrompt(vm, conversation, realPrompt)
+            },
+        )
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            state = listState,
+            contentPadding = PaddingValues(bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(conversation.currentMessages, key = { it.id.toString() }) { message ->
+                val isUser = message.role == MessageRole.USER
+                val textContent = message.toText().ifBlank {
+                    if (isUser) "(绌烘秷鎭?" else "(闈炴枃鏈秷鎭?"
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+                ) {
+                    Surface(
+                        modifier = Modifier.width(280.dp),
+                        color = if (isUser) Color(0xFFDFF7F1) else Color.White,
+                        shape = RoundedCornerShape(24.dp),
+                        tonalElevation = 1.dp,
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = if (isUser) "浣? else "灏忓悏",
+                                color = TravelTealDeep,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            if (isUser) {
+                                Text(text = textContent)
+                            } else {
+                                MarkdownBlock(
+                                    content = textContent,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier
+                .imePadding()
+                .navigationBarsPadding(),
+            color = Color.White,
+            shape = RoundedCornerShape(24.dp),
+            tonalElevation = 1.dp,
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    placeholder = { Text("闂棶灏忓悏鍚р€?) },
+                    shape = RoundedCornerShape(18.dp),
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = {
+                            if (input.isBlank()) return@Button
+                            sendTravelAiPrompt(vm, conversation, input)
+                            input = ""
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
+                    ) {
+                        Text("鍙戦€?)
+                    }
+                    Button(
+                        onClick = { vm.generateTravelPlan() },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = TravelOrange),
+                    ) {
+                        Text("鐢熸垚琛岀▼")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegacyIntegratedMineTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    historyConversationCount: Int,
+    historyConversations: List<TravelHistoryConversationSummary>,
+    historyTrips: List<TravelHistoryTripSummary>,
+    favoriteItems: List<TravelFavoriteSummary>,
+    currentTripSummary: TravelCurrentTripSummary?,
+    onOpenCurrentTrip: () -> Unit,
+    onOpenHistoryConversation: (String) -> Unit,
+    onOpenHistoryTrip: (String) -> Unit,
+    onOpenFavoriteItem: (TravelFavoriteSummary) -> Unit,
+) {
+    val plan = conversation.travelPlan
+    val nav = LocalNavController.current
+    val context = LocalContext.current
+    val destination = plan?.brief?.destination?.ifBlank { "鏃呰涓? } ?: "鏃呰涓?
+    val stats = listOf(
+        "鏃呰浼氳瘽" to historyConversationCount.toString(),
+        "宸查€夊煄甯? to if (destination.isBlank()) "0" else "1",
+        "鏀惰棌鏉＄洰" to favoriteItems.size.toString(),
+        "琛岀▼澶╂暟" to (plan?.brief?.days ?: plan?.itineraryDays.orEmpty().size).toString(),
+    )
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize().background(TravelBg),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            GradientHeader(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE0F7F1), TravelGold),
+                smallTitle = "涓汉涓績",
+                title = "鏃呰鑰?,
+                subtitle = "$destination 路 鍘熺敓鏁村悎椤?,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    stats.forEach { (label, value) ->
+                        MiniStatCard(
+                            modifier = Modifier.weight(1f),
+                            label = label,
+                            value = value,
+                        )
+                    }
+                }
+            }
+        }
+
+        if (currentTripSummary != null) {
+            item {
+                CurrentTripCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = currentTripSummary.title,
+                    subtitle = currentTripSummary.summary,
+                    onClick = onOpenCurrentTrip,
+                )
+            }
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "馃晿",
+                title = "鏈€杩戣褰?,
+                action = "鍏ㄩ儴",
+                onAction = { nav.navigate(Screen.History) },
+            )
+        }
+
+        if (historyConversations.isEmpty() && historyTrips.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "杩樻病鏈夋梾琛岃褰?,
+                    text = "瀹屾垚涓€娆¤鍒掑悗锛岃繖閲屼細鏄剧ず鏈€杩戜細璇濄€佸巻鍙茶绋嬪拰缁х画缂栬緫鍏ュ彛銆?,
+                )
+            }
+        } else {
+            historyConversations.forEach { historyConversation ->
+                item {
+                    HistoryConversationCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        item = historyConversation,
+                        onClick = { onOpenHistoryConversation(historyConversation.id) },
+                    )
+                }
+            }
+            historyTrips.forEach { historyTrip ->
+                item {
+                    HistoryTripCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        item = historyTrip,
+                        onClick = { onOpenHistoryTrip(historyTrip.conversationId) },
+                    )
+                }
+            }
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "鉂?,
+                title = "鏀惰棌鎺ㄨ崘",
+                action = "绠＄悊",
+                onAction = { nav.navigate(Screen.Favorite) },
+            )
+        }
+
+        if (favoriteItems.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = "杩樻病鏈夋敹钘忓唴瀹?,
+                    text = "浣犲彲浠ュ厛鐢熸垚琛岀▼锛屽啀浠庨厭搴椼€佺編椋熴€佹椿鍔ㄦ垨娑堟伅涓户缁敹钘忋€?,
+                )
+            }
+        } else {
+            favoriteItems.forEach { favoriteItem ->
+                item {
+                    FavoriteSummaryCard(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        item = favoriteItem,
+                        onClick = { onOpenFavoriteItem(favoriteItem) },
+                    )
+                }
+            }
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "馃摝",
+                title = "鏃呰璧勪骇",
+            )
+        }
+
+        item {
+            Surface(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = Color.White,
+                shape = RoundedCornerShape(26.dp),
+                tonalElevation = 1.dp,
+            ) {
+                Column {
+                    MineRow("鎴戠殑鏀惰棌", "${favoriteItems.size} 鏉?, enabled = true, onClick = { nav.navigate(Screen.Favorite) })
+                    MineRow("鍘嗗彶浼氳瘽", "$historyConversationCount 鏉?, enabled = true, onClick = { nav.navigate(Screen.History) })
+                    MineRow(
+                        "鏃呰鐩稿唽",
+                        "${(plan?.hotels.orEmpty().size + plan?.foods.orEmpty().size + plan?.activities.orEmpty().size)} 鏉¤褰?,
+                        enabled = false,
+                        onClick = { Toast.makeText(context, "鏃呰鐩稿唽鍔熻兘寰呮帴鍏?, Toast.LENGTH_SHORT).show() },
+                    )
+                    MineRow("绯荤粺璁剧疆", "璐﹀彿涓庨殣绉?, enabled = true, onClick = { nav.navigate(Screen.Setting) })
+                    MineRow("甯姪涓績", "甯歌闂", enabled = true, onClick = { nav.navigate(Screen.SettingAbout) })
+                }
+            }
+        }
+
+        item {
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .clickable { Toast.makeText(context, "閫€鍑虹櫥褰曞姛鑳藉緟鎺ュ叆", Toast.LENGTH_SHORT).show() },
+                color = Color(0xFFEFF9F5),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Text(
+                    text = "閫€鍑虹櫥褰?,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                    color = TravelTealDeep,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MineTab(
+    modifier: Modifier,
+    conversation: Conversation,
+    onOpenCurrentTrip: () -> Unit,
+) {
+    val plan = conversation.travelPlan
+    val nav = LocalNavController.current
+    val context = LocalContext.current
+    val destination = plan?.brief?.destination?.ifBlank { "鏃呰涓? } ?: "鏃呰涓?
+    val stats = listOf(
+        "鏃呰娆℃暟" to "${plan?.itineraryDays.orEmpty().size.coerceAtLeast(1)}",
+        "鍘昏繃鍩庡競" to if (destination.isBlank()) "0" else "1",
+        "鑾峰緱鍕嬬珷" to "${plan?.foods.orEmpty().size + plan?.activities.orEmpty().size}",
+        "鏃呰鐓х墖" to "${plan?.pois.orEmpty().size}",
+    )
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize().background(TravelBg),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            GradientHeader(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                palette = TravelPalette(TravelTealDeep, TravelTeal, Color(0xFFE0F7F1), TravelGold),
+                smallTitle = "涓汉涓績",
+                title = "鏃呰鑰呭皬鏄?,
+                subtitle = "$destination 路 鏃呰杈句汉",
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    stats.forEach { (label, value) ->
+                        MiniStatCard(
+                            modifier = Modifier.weight(1f),
+                            label = label,
+                            value = value,
+                        )
+                    }
+                }
+            }
+        }
+
+        if (plan != null) {
+            item {
+                CurrentTripCard(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    title = plan.brief?.destination?.ifBlank { "褰撳墠琛岀▼" } ?: "褰撳墠琛岀▼",
+                    subtitle = buildBriefSummary(plan.brief),
+                    onClick = onOpenCurrentTrip,
+                )
+            }
+        }
+
+        item {
+            SectionTitle(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                icon = "馃С",
+                title = "鏃呰璧勪骇",
+            )
+        }
+
+        item {
+            Surface(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = Color.White,
+                shape = RoundedCornerShape(26.dp),
+                tonalElevation = 1.dp,
+            ) {
+                Column {
+                    MineRow("鎴戠殑鏀惰棌", "${plan?.pois.orEmpty().size} 涓湴鐐?, enabled = true, onClick = { nav.navigate(Screen.Favorite) })
+                    MineRow("鍘嗗彶琛岀▼", "${plan?.itineraryDays.orEmpty().size} 澶?, enabled = true, onClick = { nav.navigate(Screen.History) })
+                    MineRow(
+                        "鏃呰鐩稿唽",
+                        "${(plan?.hotels.orEmpty().size + plan?.foods.orEmpty().size + plan?.activities.orEmpty().size)} 鏉¤褰?,
+                        enabled = false,
+                        onClick = { Toast.makeText(context, "鏃呰鐩稿唽鍔熻兘寰呮帴鍏?, Toast.LENGTH_SHORT).show() },
+                    )
+                    MineRow("绯荤粺璁剧疆", "璐﹀彿涓庨殣绉?, enabled = true, onClick = { nav.navigate(Screen.Setting) })
+                    MineRow("甯姪涓績", "甯歌闂", enabled = true, onClick = { nav.navigate(Screen.SettingAbout) })
+                }
+            }
+        }
+
+        item {
+            Surface(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .clickable { Toast.makeText(context, "閫€鍑虹櫥褰曞姛鑳藉緟鎺ュ叆", Toast.LENGTH_SHORT).show() },
+                color = Color(0xFFEFF9F5),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Text(
+                    text = "閫€鍑虹櫥褰?,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                    color = TravelTealDeep,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GradientHeader(
+    modifier: Modifier = Modifier,
+    palette: TravelPalette,
+    smallTitle: String,
+    title: String,
+    subtitle: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(32.dp),
+        color = Color.Transparent,
+        tonalElevation = 0.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .background(Brush.linearGradient(listOf(palette.start, palette.end)))
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(smallTitle, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.titleMedium)
+            Text(title, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+            Text(subtitle, color = Color.White.copy(alpha = 0.92f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun HeaderActionRow(
+    leftLabel: String,
+    rightLabel: String,
+    onLeft: () -> Unit,
+    onRight: () -> Unit,
+    rightEnabled: Boolean = true,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TinyActionButton(leftLabel, onLeft, enabled = true)
+        TinyActionButton(rightLabel, onRight, enabled = rightEnabled)
+    }
+}
+
+@Composable
+private fun TinyActionButton(label: String, onClick: () -> Unit, enabled: Boolean) {
+    Surface(
+        modifier = Modifier.clickable(enabled = enabled, onClick = onClick),
+        color = Color.White.copy(alpha = if (enabled) 0.18f else 0.12f),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            color = Color.White.copy(alpha = if (enabled) 0.98f else 0.72f),
+            style = MaterialTheme.typography.labelLarge,
+        )
+    }
+}
+
+@Composable
+private fun HeaderHintBadge(text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+    ) {
+        Surface(
+            color = Color.White,
+            shape = RoundedCornerShape(18.dp),
+        ) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                color = TravelTealDeep,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeroStatsRow(items: List<String>) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.filter { it.isNotBlank() }.forEach { item ->
+            Surface(
+                color = Color.White.copy(alpha = 0.18f),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Text(
+                    text = item,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchBox(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        placeholder = { Text(placeholder) },
+        shape = RoundedCornerShape(22.dp),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = Color.White,
+            unfocusedContainerColor = Color.White,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+        ),
+    )
+}
+
+@Composable
+private fun SuggestionCard(
+    suggestions: List<TravelSearchSuggestion>,
+    onSelectSuggestion: (TravelSearchSuggestion) -> Unit,
+) {
+    Surface(
+        color = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            suggestions.take(6).forEach { suggestion ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectSuggestion(suggestion) }
+                        .padding(vertical = 10.dp),
+                ) {
+                    Text(
+                        text = suggestion.name.ifBlank { "鏈懡鍚嶅湴鐐? },
+                        fontWeight = FontWeight.Bold,
+                    )
+                    val subtitle = listOf(suggestion.district, suggestion.address)
+                        .filter { it.isNotBlank() }
+                        .joinToString(" 路 ")
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            color = TravelTextMuted,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class QuickAction(val icon: String, val label: String, val onClick: () -> Unit)
+
+@Composable
+private fun QuickActionGrid(modifier: Modifier = Modifier, actions: List<QuickAction>) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        actions.forEach { action ->
+            Surface(
+                modifier = Modifier.weight(1f).clickable(onClick = action.onClick),
+                color = Color.White,
+                shape = RoundedCornerShape(22.dp),
+                tonalElevation = 1.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(vertical = 18.dp, horizontal = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFF1FAF8)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(action.icon)
+                    }
+                    Text(action.label, fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(
+    modifier: Modifier = Modifier,
+    icon: String,
+    title: String,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(icon)
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+        }
+        if (action != null && onAction != null) {
+            TextButton(onClick = onAction) { Text(action) }
+        }
+    }
+}
+
+@Composable
+private fun EmptyStateCard(modifier: Modifier = Modifier, title: String, text: String) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(24.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(text, color = TravelTextMuted)
+        }
+    }
+}
+
+@Composable
+private fun InfoBanner(modifier: Modifier = Modifier, title: String, text: String, tone: Color) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = tone,
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(title, fontWeight = FontWeight.Bold)
+            Text(text, color = TravelTextMuted)
+        }
+    }
+}
+
+@Composable
+private fun FeaturedRecommendationCard(item: TravelRecommendationItem, modifier: Modifier = Modifier) {
+    val palette = paletteForCategory(item.category)
+    Surface(
+        modifier = modifier,
+        color = Color.White,
+        shape = RoundedCornerShape(26.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp)
+                    .background(Brush.linearGradient(listOf(palette.start, palette.end))),
+            ) {
+                SmallHeaderChip(
+                    modifier = Modifier.padding(12.dp),
+                    text = categoryDisplayName(item.category),
+                )
+                Text(
+                    text = categoryEmoji(item.category),
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.displaySmall,
+                )
+                if (item.priceHint.isNotBlank()) {
+                    SmallHeaderChip(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(12.dp),
+                        text = item.priceHint,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(item.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                val subtitle = listOf(item.area.takeIf { it.isNotBlank() }, item.subtitle.takeIf { it.isNotBlank() })
+                    .filterNotNull()
+                    .joinToString(" 路 ")
+                if (subtitle.isNotBlank()) {
+                    Text(subtitle, color = TravelTextMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                RecommendationMetaText(item)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NearbyRecommendationRow(modifier: Modifier = Modifier, item: TravelRecommendationItem) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFF1FAF8)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(categoryEmoji(item.category))
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = listOf(
+                        item.area.takeIf { it.isNotBlank() },
+                        item.priceHint.takeIf { it.isNotBlank() },
+                        item.ratingText.takeIf { it.isNotBlank() },
+                        item.inventoryHint.takeIf { it.isNotBlank() },
+                    ).filterNotNull().joinToString(" 路 ").ifBlank { item.subtitle.ifBlank { "绛夊緟鏇村鍦扮偣璇︽儏" } },
+                    color = TravelTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text("鈥?, style = MaterialTheme.typography.headlineSmall, color = TravelTextMuted)
+        }
+    }
+}
+
+@Composable
+private fun AssistantCtaCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    text: String,
+    primaryLabel: String,
+    secondaryLabel: String,
+    onPrimary: () -> Unit,
+    onSecondary: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color(0xFFDFF7F1),
+        shape = RoundedCornerShape(26.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFFC9EFE5)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("馃")
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Text(text, color = TravelTextMuted, style = MaterialTheme.typography.bodySmall)
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onPrimary,
+                    colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Text(primaryLabel)
+                }
+                TextButton(onClick = onSecondary) { Text(secondaryLabel) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionStrip(modifier: Modifier = Modifier, actions: List<Pair<String, () -> Unit>>) {
+    Row(
+        modifier = modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        actions.forEach { (label, action) ->
+            Surface(
+                modifier = Modifier.clickable(onClick = action),
+                color = Color.White,
+                shape = RoundedCornerShape(18.dp),
+                tonalElevation = 1.dp,
+            ) {
+                Text(
+                    text = label,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    color = TravelTealDeep,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecommendationListingCard(
+    modifier: Modifier = Modifier,
+    item: TravelRecommendationItem,
+    palette: TravelPalette,
+    category: TravelRecommendationCategory,
+    onAskAi: () -> Unit,
+    onOpenMap: () -> Unit,
+) {
+    val nav = LocalNavController.current
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(28.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(170.dp)
+                    .background(Brush.linearGradient(listOf(palette.start, palette.end))),
+            ) {
+                SmallHeaderChip(
+                    modifier = Modifier.padding(14.dp),
+                    text = item.tags.firstOrNull().takeUnless { it.isNullOrBlank() } ?: categoryDisplayName(category),
+                )
+                Text(
+                    text = categoryEmoji(category),
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.displayMedium,
+                )
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(14.dp),
+                    color = Color.White,
+                    shape = CircleShape,
+                ) {
+                    Text("鈾?, modifier = Modifier.padding(10.dp))
+                }
+                if (item.reason.isNotBlank()) {
+                    Text(
+                        text = item.reason,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(14.dp),
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(item.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                if (item.subtitle.isNotBlank()) {
+                    Text(item.subtitle, color = TravelTextMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                RecommendationMetaText(item)
+                if (item.tags.isNotEmpty()) {
+                    ChipRow(item.tags.take(4))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = onOpenMap,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.accent),
+                    ) {
+                        Text("鍦板浘鏌ョ湅")
+                    }
+                    Button(
+                        onClick = onAskAi,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
+                    ) {
+                        Text("铻嶅叆琛岀▼")
+                    }
+                    if (item.bookingUrl.isNotBlank()) {
+                        Button(
+                            onClick = { nav.navigate(Screen.WebView(url = item.bookingUrl)) },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = TravelOrange),
+                        ) {
+                            Text("鍘绘煡鐪?)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecommendationMetaText(item: TravelRecommendationItem) {
+    val meta = listOf(
+        item.area.takeIf { it.isNotBlank() },
+        item.ratingText.takeIf { it.isNotBlank() },
+        item.priceHint.takeIf { it.isNotBlank() },
+        item.inventoryHint.takeIf { it.isNotBlank() },
+        item.source.takeIf { it.isNotBlank() },
+    ).filterNotNull().joinToString(" 路 ")
+    if (meta.isNotBlank()) {
+        Text(
+            text = meta,
+            color = TravelTealDeep,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun SmallHeaderChip(modifier: Modifier = Modifier, text: String) {
+    Surface(
+        modifier = modifier,
+        color = Color.White.copy(alpha = 0.9f),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = TravelTealDeep,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun ChipRow(
+    chips: List<String>,
+    selected: String? = null,
+    onSelect: ((String) -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        chips.forEach { chip ->
+            val isSelected = chip == selected
+            Surface(
+                modifier = Modifier.clickable(enabled = onSelect != null, onClick = { onSelect?.invoke(chip) }),
+                color = if (isSelected) TravelTeal else Color.White,
+                shape = RoundedCornerShape(18.dp),
+                tonalElevation = if (isSelected) 0.dp else 1.dp,
+                border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, TravelLine),
+            ) {
+                Text(
+                    text = chip,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    color = if (isSelected) Color.White else TravelTealDeep,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TinyMapBadge(text: String, selected: Boolean) {
+    Surface(
+        color = if (selected) TravelOrange else TravelTeal,
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun FloatingCircle(text: String) {
+    Surface(
+        color = Color.White.copy(alpha = 0.92f),
+        shape = CircleShape,
+        tonalElevation = 1.dp,
+    ) {
+        Box(
+            modifier = Modifier.size(46.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(text)
+        }
+    }
+}
+
+@Composable
+private fun DayChip(title: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        color = if (selected) TravelTeal else Color.White,
+        shape = RoundedCornerShape(20.dp),
+        tonalElevation = if (selected) 0.dp else 1.dp,
+        border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, TravelLine),
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            color = if (selected) Color.White else TravelTealDeep,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun DayTimelineCard(modifier: Modifier = Modifier, day: TravelItineraryDay) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(28.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(day.title.ifBlank { "Day ${day.dayIndex}" }, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+            Text(
+                text = listOf(day.dateText.takeIf { it.isNotBlank() }, day.weatherHint.takeIf { it.isNotBlank() })
+                    .filterNotNull()
+                    .joinToString(" 路 ")
+                    .ifBlank { "鐪熷疄澶╂皵浼氬啓鍦ㄨ繖閲? },
+                color = TravelTextMuted,
+            )
+            day.items.forEachIndexed { index, item ->
+                TimelineItemRow(
+                    item = item,
+                    isLast = index == day.items.lastIndex,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimelineItemRow(item: me.rerere.rikkahub.data.model.TravelItineraryItem, isLast: Boolean) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .border(2.dp, TravelLine, CircleShape),
+            )
+            if (!isLast) {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .width(2.dp)
+                        .height(72.dp)
+                        .background(TravelLine),
+                )
+            }
+        }
+        Surface(
+            modifier = Modifier.weight(1f),
+            color = Color(0xFFFCFFFE),
+            shape = RoundedCornerShape(22.dp),
+            tonalElevation = 0.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, TravelLine),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(item.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    SmallStatusPill(categoryLabel(item.category), categoryColor(item.category))
+                }
+                val details = listOf(
+                    item.timeSlot.takeIf { it.isNotBlank() },
+                    item.description.takeIf { it.isNotBlank() },
+                    item.transportHint.takeIf { it.isNotBlank() },
+                    item.estimatedCost.takeIf { it.isNotBlank() },
+                ).filterNotNull()
+                details.forEach { line ->
+                    Text(line, color = TravelTextMuted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmallStatusPill(text: String, color: Color) {
+    Surface(color = color.copy(alpha = 0.16f), shape = RoundedCornerShape(16.dp)) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = color,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun WeatherStrip(modifier: Modifier = Modifier, days: List<TravelItineraryDay>) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color(0xFFEAF8F4),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("鏈懆澶╂皵", fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                days.take(7).forEach { day ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(day.dateText.ifBlank { "Day${day.dayIndex}" }, style = MaterialTheme.typography.bodySmall, color = TravelTextMuted)
+                        Text(weatherEmoji(day.weatherHint))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiAdviceCard(modifier: Modifier = Modifier, day: TravelItineraryDay, onOpenAi: () -> Unit) {
+    val transportHint = day.items.firstNotNullOfOrNull { it.transportHint.takeIf(String::isNotBlank) }
+    val summary = buildString {
+        if (day.weatherHint.isNotBlank()) append("澶╂皵锛?{day.weatherHint}")
+        if (transportHint != null) {
+            if (isNotBlank()) append("锛?)
+            append("璺嚎锛?transportHint")
+        }
+        if (isBlank()) append("浠婂ぉ鐨勭湡瀹炲ぉ姘斾笌璺嚎鎻愮ず宸茬粡鍙敤浜?AI 浜屾浼樺寲銆?)
+    }
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(26.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("馃 AI寤鸿", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+            Text(summary, color = TravelTextMuted)
+            TextButton(onClick = onOpenAi) { Text("璇㈤棶 AI 浼樺寲琛岀▼ 鈥?) }
+        }
+    }
+}
+
+@Composable
+private fun MiniStatCard(modifier: Modifier = Modifier, label: String, value: String) {
+    Surface(
+        modifier = modifier,
+        color = Color.White.copy(alpha = 0.14f),
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(value, color = Color.White, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleLarge)
+            Text(label, color = Color.White.copy(alpha = 0.92f), style = MaterialTheme.typography.bodySmall, maxLines = 2)
+        }
+    }
+}
+
+@Composable
+private fun CurrentTripCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String,
+    onClick: (() -> Unit)? = null,
+) {
+    Surface(
+        modifier = if (onClick != null) {
+            modifier.fillMaxWidth().clickable(onClick = onClick)
+        } else {
+            modifier.fillMaxWidth()
+        },
+        color = Color(0xFFFFF0C7),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFFFFE3A4)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("馃彅")
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("褰撳墠琛岀▼", color = TravelTextMuted, style = MaterialTheme.typography.bodySmall)
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text(subtitle, color = TravelTextMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Text(
+                text = if (onClick != null) "缁х画" else "鈥?,
+                style = MaterialTheme.typography.titleMedium,
+                color = TravelOrange,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MineRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = onClick != null, onClick = { onClick?.invoke() })
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                color = if (enabled) Color.Unspecified else TravelTextMuted,
+            )
+            Text(
+                text = subtitle,
+                color = TravelTextMuted.copy(alpha = if (enabled) 1f else 0.72f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Text(
+            text = if (enabled) "鈥? else "寰呮帴鍏?,
+            color = if (enabled) TravelTextMuted else TravelOrangeDeep,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun HistoryConversationCard(
+    modifier: Modifier = Modifier,
+    item: TravelHistoryConversationSummary,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (item.subtitle.isNotBlank()) {
+                Text(item.subtitle, color = TravelTealDeep, style = MaterialTheme.typography.bodySmall)
+            }
+            if (item.preview.isNotBlank()) {
+                Text(
+                    item.preview,
+                    color = TravelTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HistoryTripCard(
+    modifier: Modifier = Modifier,
+    item: TravelHistoryTripSummary,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color(0xFFFFF7DF),
+        shape = RoundedCornerShape(22.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFFFFE3A4)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("馃Л")
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    item.summary,
+                    color = TravelTextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            SmallStatusPill(text = item.status.ifBlank { "trip" }, color = TravelOrangeDeep)
+        }
+    }
+}
+
+@Composable
+private fun FavoriteSummaryCard(
+    modifier: Modifier = Modifier,
+    item: TravelFavoriteSummary,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        color = Color.White,
+        shape = RoundedCornerShape(22.dp),
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFF1FAF8)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    when (item.category) {
+                        "hotel" -> "馃彣"
+                        "food" -> "馃崪"
+                        "activity" -> "馃帿"
+                        else -> "馃挰"
+                    }
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (item.subtitle.isNotBlank()) {
+                    Text(
+                        item.subtitle,
+                        color = TravelTextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text("鈥?, color = TravelTextMuted, style = MaterialTheme.typography.titleLarge)
+        }
+    }
+}
+
+private fun Conversation.toTravelHistoryConversationSummary(): TravelHistoryConversationSummary {
+    val preview = currentMessages.lastOrNull()?.toText().orEmpty().trim()
+    return TravelHistoryConversationSummary(
+        id = id.toString(),
+        title = title.ifBlank { travelPlan?.brief?.destination?.ifBlank { "鍘嗗彶浼氳瘽" } ?: "鍘嗗彶浼氳瘽" },
+        subtitle = travelPlan.toTravelSummaryText(),
+        preview = preview,
+    )
+}
+
+private fun Conversation.toTravelHistoryTripSummary(): TravelHistoryTripSummary? {
+    val plan = travelPlan ?: return null
+    return TravelHistoryTripSummary(
+        conversationId = id.toString(),
+        title = title.ifBlank { plan.brief?.destination?.ifBlank { "鍘嗗彶琛岀▼" } ?: "鍘嗗彶琛岀▼" },
+        summary = plan.toTravelSummaryText(),
+        status = travelPlanningState.name,
+    )
+}
+
+private fun FavoriteEntity.toTravelFavoriteSummary(): TravelFavoriteSummary? {
+    val ref = NodeFavoriteAdapter.decodeRef(this) ?: return null
+    val meta = NodeFavoriteAdapter.decodeMeta(this)
+    return TravelFavoriteSummary(
+        id = id,
+        title = meta?.title?.ifBlank { "鏀惰棌娑堟伅" } ?: "鏀惰棌娑堟伅",
+        subtitle = meta?.previewText.orEmpty(),
+        category = "favorite",
+        conversationId = ref.conversationId.toString(),
+        nodeId = ref.nodeId.toString(),
+    )
+}
+
+private fun TravelPlan?.toFallbackFavoriteSummaries(): List<TravelFavoriteSummary> {
+    val plan = this ?: return emptyList()
+
+    fun items(category: String, list: List<TravelRecommendationItem>): List<TravelFavoriteSummary> {
+        return list.take(2).map { item ->
+            TravelFavoriteSummary(
+                id = "$category-${item.id}",
+                title = item.title,
+                subtitle = item.subtitle.ifBlank { item.area.ifBlank { item.priceHint.ifBlank { item.ratingText } } },
+                category = category,
+                conversationId = plan.conversationId,
+            )
+        }
+    }
+
+    return buildList {
+        addAll(items("hotel", plan.hotels))
+        addAll(items("food", plan.foods))
+        addAll(items("activity", plan.activities))
+    }
+}
+
+private fun Conversation.toTravelCurrentTripSummary(): TravelCurrentTripSummary? {
+    val plan = travelPlan ?: return null
+    return TravelCurrentTripSummary(
+        conversationId = id.toString(),
+        title = title.ifBlank { plan.brief?.destination?.ifBlank { "褰撳墠琛岀▼" } ?: "褰撳墠琛岀▼" },
+        summary = plan.toTravelSummaryText(),
+    )
+}
+
+private fun TravelPlan?.toTravelSummaryText(): String {
+    val plan = this ?: return ""
+    val brief = plan.brief
+    val parts = buildList {
+        brief?.destination?.takeIf { it.isNotBlank() }?.let(::add)
+        brief?.dateRange?.takeIf { it.isNotBlank() }?.let(::add)
+        (brief?.days ?: plan.itineraryDays.size).takeIf { it > 0 }?.let { add("${it} 澶?) }
+    }
+    return if (parts.isNotEmpty()) parts.joinToString(" 路 ") else "鏃呰璁″垝寰呰ˉ鍏?
+}
+
+private fun exportTripMarkdownFile(
+    context: android.content.Context,
+    conversation: Conversation,
+): File {
+    val exportsDir = File(context.cacheDir, "zhitu-exports").apply { mkdirs() }
+    val safeName = (conversation.title.ifBlank { conversation.travelPlan?.brief?.destination ?: "travel-plan" })
+        .replace(Regex("[\\\\/:*?\"<>|\\s]+"), "-")
+        .trim('-')
+        .ifBlank { "travel-plan" }
+    val file = File(exportsDir, "$safeName.md")
+    file.writeText(buildTripMarkdown(conversation))
+    return file
+}
+
+private fun shareTripMarkdownFile(
+    context: android.content.Context,
+    conversation: Conversation,
+) {
+    val file = exportTripMarkdownFile(context, conversation)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/markdown"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_TEXT, buildTripMarkdown(conversation))
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "鍒嗕韩琛岀▼"))
+}
+
+private fun buildTripMarkdown(conversation: Conversation): String {
+    val plan = conversation.travelPlan
+    val brief = plan?.brief
+    return buildString {
+        appendLine("# ${conversation.title.ifBlank { brief?.destination ?: "鏃呰琛岀▼" }}")
+        appendLine()
+        if (brief != null) {
+            appendLine("## 琛岀▼鎽樿")
+            brief.destination.takeIf { it.isNotBlank() }?.let { appendLine("- 鐩殑鍦帮細$it") }
+            brief.origin.takeIf { it.isNotBlank() }?.let { appendLine("- 鍑哄彂鍦帮細$it") }
+            brief.dateRange.takeIf { it.isNotBlank() }?.let { appendLine("- 鏃ユ湡锛?it") }
+            brief.days?.let { appendLine("- 澶╂暟锛?it 澶?) }
+            brief.budgetText.takeIf { it.isNotBlank() }?.let { appendLine("- 棰勭畻锛?it") }
+            brief.userIntentSummary.takeIf { it.isNotBlank() }?.let { appendLine("- 闇€姹傦細$it") }
+            appendLine()
+        }
+
+        plan?.itineraryDays?.takeIf { it.isNotEmpty() }?.let { days ->
+            appendLine("## 姣忔棩瀹夋帓")
+            days.forEach { day ->
+                appendLine("### 绗?${day.dayIndex} 澶╋細${day.title}")
+                day.dateText.takeIf { it.isNotBlank() }?.let { appendLine("- 鏃ユ湡锛?it") }
+                day.weatherHint.takeIf { it.isNotBlank() }?.let { appendLine("- 澶╂皵锛?it") }
+                day.items.forEach { item ->
+                    appendLine("- ${item.timeSlot.ifBlank { "鏃舵寰呭畾" }}锝?{item.title}")
+                    item.description.takeIf { it.isNotBlank() }?.let { appendLine("  - 璇存槑锛?it") }
+                    item.transportHint.takeIf { it.isNotBlank() }?.let { appendLine("  - 浜ら€氾細$it") }
+                    item.estimatedCost.takeIf { it.isNotBlank() }?.let { appendLine("  - 璐圭敤锛?it") }
+                }
+                appendLine()
+            }
+        }
+
+        fun appendRecommendationBlock(title: String, items: List<TravelRecommendationItem>) {
+            if (items.isEmpty()) return
+            appendLine("## $title")
+            items.forEach { item ->
+                appendLine("- ${item.title}")
+                item.subtitle.takeIf { it.isNotBlank() }?.let { appendLine("  - 浣嶇疆锛?it") }
+                item.reason.takeIf { it.isNotBlank() }?.let { appendLine("  - 鎺ㄨ崘鐞嗙敱锛?it") }
+                item.priceHint.takeIf { it.isNotBlank() }?.let { appendLine("  - 浠锋牸锛?it") }
+                item.ratingText.takeIf { it.isNotBlank() }?.let { appendLine("  - 璇勫垎锛?it") }
+            }
+            appendLine()
+        }
+
+        appendRecommendationBlock("閰掑簵鎺ㄨ崘", plan?.hotels.orEmpty())
+        appendRecommendationBlock("缇庨鎺ㄨ崘", plan?.foods.orEmpty())
+        appendRecommendationBlock("娲诲姩鎺ㄨ崘", plan?.activities.orEmpty())
+    }
+}
+
+private fun categoryLabel(category: TravelItemCategory): String = when (category) {
+    TravelItemCategory.transport -> "浜ら€?
+    TravelItemCategory.sightseeing -> "鏅偣"
+    TravelItemCategory.food -> "椁愰ギ"
+    TravelItemCategory.hotel -> "浣忓"
+    TravelItemCategory.activity -> "娲诲姩"
+    TravelItemCategory.free_time -> "鑷敱"
+    TravelItemCategory.shopping -> "璐墿"
+    TravelItemCategory.other -> "鍏朵粬"
+}
+
+private fun categoryColor(category: TravelItemCategory): Color = when (category) {
+    TravelItemCategory.transport -> TravelBlueDeep
+    TravelItemCategory.sightseeing -> TravelTealDeep
+    TravelItemCategory.food -> TravelOrangeDeep
+    TravelItemCategory.hotel -> Color(0xFF5E9AE0)
+    TravelItemCategory.activity -> TravelMint
+    TravelItemCategory.free_time -> Color(0xFF8CA6A0)
+    TravelItemCategory.shopping -> Color(0xFFA86DE1)
+    TravelItemCategory.other -> TravelTextMuted
+}
+
+private fun categoryDisplayName(category: TravelRecommendationCategory): String = when (category) {
+    TravelRecommendationCategory.hotel -> "浣忓"
+    TravelRecommendationCategory.food -> "缇庨"
+    TravelRecommendationCategory.activity -> "娲诲姩"
+}
+
+private fun categoryEmoji(category: TravelRecommendationCategory): String = when (category) {
+    TravelRecommendationCategory.hotel -> "馃彣"
+    TravelRecommendationCategory.food -> "馃崪"
+    TravelRecommendationCategory.activity -> "馃幆"
+}
+
+private fun paletteForCategory(category: TravelRecommendationCategory): TravelPalette = when (category) {
+    TravelRecommendationCategory.hotel -> TravelPalette(TravelBlue, Color(0xFF9CD8FF), Color(0xFFE8F6FF), TravelBlueDeep)
+    TravelRecommendationCategory.food -> TravelPalette(TravelOrange, Color(0xFFFFC16B), Color(0xFFFFF0DC), TravelOrangeDeep)
+    TravelRecommendationCategory.activity -> TravelPalette(TravelTeal, Color(0xFF9AE7D1), Color(0xFFE7FAF3), TravelTealDeep)
+}
+
+private fun categorySearchPlaceholder(category: TravelRecommendationCategory): String = when (category) {
+    TravelRecommendationCategory.hotel -> "鎼滅储姘戝銆侀厭搴楀悕绉扳€?
+    TravelRecommendationCategory.food -> "鎼滅储椁愬巺銆佽彍绯烩€?
+    TravelRecommendationCategory.activity -> "鎼滅储娲诲姩浣撻獙鈥?
+}
+
+private fun buildRecommendationSubtitle(
+    category: TravelRecommendationCategory,
+    conversation: Conversation,
+    ui: TravelHubUiState,
+): String {
+    val destination = conversation.travelPlan?.brief?.destination?.ifBlank { ui.selectedDestination?.name.orEmpty() }
+        ?.ifBlank { ui.selectedDestination?.name.orEmpty() }
+        ?: "寰呴€夋嫨鐩殑鍦?
+    return when (category) {
+        TravelRecommendationCategory.hotel -> "$destination 路 鍙戠幇鑸掗€傚ソ鍘诲"
+        TravelRecommendationCategory.food -> "$destination 路 鍙戠幇鍦伴亾缇庡懗"
+        TravelRecommendationCategory.activity -> "$destination 路 鎺㈢储鐙壒浣撻獙"
+    }
+}
+
+private fun buildRecommendationFilterChips(category: TravelRecommendationCategory): List<String> = when (category) {
+    TravelRecommendationCategory.hotel -> listOf("缁煎悎鎺ㄨ崘", "浠锋牸鍗囧簭", "璇勫垎鏈€楂?, "璺濈鏈€杩?, "姘戝", "閰掑簵", "姹熸櫙")
+    TravelRecommendationCategory.food -> listOf("鍏ㄩ儴", "绫崇矇", "鐑х儰", "绱犻", "鑼堕", "澶滃")
+    TravelRecommendationCategory.activity -> listOf("鍏ㄩ儴", "鎴峰鎺㈤櫓", "鏂囧寲鎺㈢储", "浼戦棽娲诲姩", "澶滄父")
+}
+
+private fun mapFilterLabel(value: String): String = when (value) {
+    "hotel" -> "浣忓"
+    "food" -> "缇庨"
+    "route" -> "璺嚎"
+    else -> "娲诲姩"
+}
+
+private fun mapFilterValue(label: String): String = when (label) {
+    "浣忓" -> "hotel"
+    "缇庨" -> "food"
+    "璺嚎" -> "route"
+    else -> "activity"
+}
+
+private fun travelPlanningStateLabel(state: TravelPlanningState): String = when (state) {
+    TravelPlanningState.ExtractingBrief -> "鎻愮偧闇€姹備腑"
+    TravelPlanningState.GeneratingPlan -> "鐢熸垚涓?
+    TravelPlanningState.Generated -> "宸茬敓鎴?
+    TravelPlanningState.Failed -> "鐢熸垚澶辫触"
+    else -> "寰呭畬鍠?
+}
+
+private fun weatherEmoji(text: String): String {
+    val lower = text.lowercase()
+    return when {
+        "闆? in text || "rain" in lower -> "馃導"
+        "浜? in text || "cloud" in lower -> "鈽侊笍"
+        "闆? in text || "snow" in lower -> "鉂勶笍"
+        "椋? in text || "wind" in lower -> "馃尙"
+        else -> "鈽€锔?
+    }
+}
+
+private fun sendTravelAiPrompt(vm: ChatVM, conversation: Conversation, prompt: String) {
+    if (prompt.isBlank()) return
+    if (conversation.messageNodes.isEmpty()) {
+        vm.startTravelPlanning(prompt)
+    } else {
+        vm.ensureTravelAssistantSelected()
+        vm.handleMessageSend(listOf(UIMessagePart.Text(prompt)))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StartPlanningSheet(onDismiss: () -> Unit, onSubmit: (String) -> Unit) {
+    var origin by rememberSaveable { mutableStateOf("") }
+    var destination by rememberSaveable { mutableStateOf("") }
+    var dates by rememberSaveable { mutableStateOf("") }
+    var travelers by rememberSaveable { mutableStateOf("") }
+    var budget by rememberSaveable { mutableStateOf("") }
+    var tags by rememberSaveable { mutableStateOf("") }
+    var transport by rememberSaveable { mutableStateOf("") }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("寮€濮嬪～鍐欐梾琛岄渶姹?, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+            Text("淇濇寔鍘熸湁鍏ュ彛涓嶅彉锛屽彧琛ュ厖鐪熷疄澶╂皵銆佽矾绾垮拰鎺ㄨ崘鑱斿姩銆?, color = TravelTextMuted)
+            PlannerField(origin, { origin = it }, "鍑哄彂鍦?)
+            PlannerField(destination, { destination = it }, "鐩殑鍦?)
+            PlannerField(dates, { dates = it }, "鏃ユ湡")
+            PlannerField(travelers, { travelers = it }, "浜烘暟")
+            PlannerField(budget, { budget = it }, "棰勭畻")
+            PlannerField(tags, { tags = it }, "椋庢牸鍋忓ソ")
+            PlannerField(transport, { transport = it }, "浜ら€氬亸濂?)
+            Button(
+                onClick = {
+                    onSubmit(
+                        buildString {
+                            appendLine("璇峰府鎴戝垱寤轰竴涓梾琛岃鍒掋€?)
+                            appendLine("鍑哄彂鍦? ${origin.ifBlank { "寰呭畾" }}")
+                            appendLine("鐩殑鍦? ${destination.ifBlank { "寰呭畾" }}")
+                            appendLine("鏃ユ湡: ${dates.ifBlank { "寰呭畾" }}")
+                            appendLine("浜烘暟: ${travelers.ifBlank { "寰呭畾" }}")
+                            appendLine("棰勭畻: ${budget.ifBlank { "寰呭畾" }}")
+                            appendLine("椋庢牸鍋忓ソ: ${tags.ifBlank { "杞绘澗銆佺編椋熴€佹媿鐓? }}")
+                            appendLine("浜ら€氬亸濂? ${transport.ifBlank { "楂橀搧銆佽埅鐝€佸叕鍏变氦閫? }}")
+                            append("璇峰厛鎻愮偧 brief锛屽啀鐢熸垚鎺ㄨ崘鍜岃缁嗚绋嬨€?)
+                        },
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = TravelTeal),
+            ) {
+                Text("缁х画浜ょ粰 AI")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ColumnScope.PlannerField(value: String, onValueChange: (String) -> Unit, label: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+    )
+}

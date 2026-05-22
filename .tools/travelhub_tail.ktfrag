@@ -1,0 +1,315 @@
+private fun Conversation.toZhituConversationState(
+    assistantRecommendation: ZhituAssistantRecommendationState? = null,
+): ZhituConversationState {
+    val isStreamingAssistantMessage =
+        currentMessages.lastOrNull()?.role == MessageRole.ASSISTANT &&
+            currentMessages.lastOrNull()?.finishedAt == null
+    val visibleMessages = if (isStreamingAssistantMessage) {
+        currentMessages.filterNot { message ->
+            message.role == MessageRole.ASSISTANT && message.finishedAt == null
+        }
+    } else {
+        currentMessages
+    }
+    val mappedMessages = visibleMessages.map { message ->
+        ZhituMessageState(
+            id = message.id.toString(),
+            role = message.role.name,
+            text = message.toText(),
+            createdAt = message.createdAt.toString(),
+        )
+    }
+    val syntheticMessage = assistantRecommendation?.let {
+        ZhituMessageState(
+            id = "assistant-recommendation-${it.category}",
+            role = MessageRole.ASSISTANT.name,
+            text = it.message,
+            createdAt = updateAt.toString(),
+        )
+    }
+
+    return ZhituConversationState(
+        id = id.toString(),
+        title = title.ifBlank { travelPlan?.brief?.destination?.ifBlank { "New trip chat" } ?: "New trip chat" },
+        isGenerating = isStreamingAssistantMessage,
+        suggestions = chatSuggestions,
+        messages = syntheticMessage?.let { mappedMessages + it } ?: mappedMessages,
+    )
+}
+
+private fun TravelHubUiState.toZhituTravelUiStateState(weatherSummary: String): ZhituTravelUiStateState {
+    return ZhituTravelUiStateState(
+        searchQuery = searchQuery,
+        weatherSummary = weatherSummary,
+        selectedMapFilter = selectedMapFilter,
+        selectedDestination = selectedDestination?.toZhituSuggestionState(),
+        suggestions = suggestions.map(TravelSearchSuggestion::toZhituSuggestionState),
+    )
+}
+
+private fun TravelSearchSuggestion.toZhituSuggestionState(): ZhituSuggestionState {
+    return ZhituSuggestionState(
+        id = id,
+        name = name,
+        subtitle = listOf(district, address).filter { it.isNotBlank() }.joinToString(" "),
+        lat = lat,
+        lon = lon,
+    )
+}
+
+private fun TravelPlan.toZhituTravelPlanState(visibleMapPois: List<TravelPoi>): ZhituTravelPlanState {
+    return ZhituTravelPlanState(
+        brief = brief?.let {
+            ZhituTravelBriefState(
+                destination = it.destination,
+                origin = it.origin,
+                dateRange = it.dateRange,
+                days = it.days,
+                travelerCount = it.travelerCount,
+                budgetText = it.budgetText,
+                budgetLevel = it.budgetLevel,
+                travelStyleTags = it.travelStyleTags,
+                transportPreferences = it.transportPreferences,
+                userIntentSummary = it.userIntentSummary,
+            )
+        },
+        hotels = hotels.map(TravelRecommendationItem::toZhituRecommendationState),
+        foods = foods.map(TravelRecommendationItem::toZhituRecommendationState),
+        activities = activities.map(TravelRecommendationItem::toZhituRecommendationState),
+        pois = visibleMapPois.map(TravelPoi::toZhituPoiState),
+        itineraryDays = itineraryDays.map(TravelItineraryDay::toZhituItineraryDayState),
+        status = status.name,
+    )
+}
+
+private fun TravelRecommendationItem.toZhituRecommendationState(): ZhituRecommendationState {
+    return ZhituRecommendationState(
+        id = id,
+        title = title,
+        subtitle = subtitle,
+        tags = tags,
+        reason = reason,
+        priceHint = priceHint,
+        ratingText = ratingText,
+        area = area,
+        inventoryHint = inventoryHint,
+        bookingUrl = bookingUrl,
+        lat = lat,
+        lon = lon,
+        distanceText = "",
+    )
+}
+
+private fun TravelPoi.toZhituPoiState(): ZhituPoiState {
+    return ZhituPoiState(
+        id = id,
+        name = name,
+        category = category,
+        address = address,
+        lat = lat,
+        lon = lon,
+    )
+}
+
+private fun TravelItineraryDay.toZhituItineraryDayState(): ZhituItineraryDayState {
+    return ZhituItineraryDayState(
+        dayIndex = dayIndex,
+        title = title,
+        dateText = dateText,
+        weatherHint = weatherHint,
+        items = items.map(TravelItineraryItem::toZhituItineraryItemState),
+    )
+}
+
+private fun TravelItineraryItem.toZhituItineraryItemState(): ZhituItineraryItemState {
+    return ZhituItineraryItemState(
+        id = id,
+        timeSlot = timeSlot,
+        title = title,
+        description = description,
+        category = category.name,
+        estimatedCost = estimatedCost,
+        transportHint = transportHint,
+    )
+}
+
+private fun Conversation.toZhituHistoryConversationState(): ZhituHistoryConversationState {
+    val preview = currentMessages.lastOrNull()?.toText().orEmpty().trim()
+    return ZhituHistoryConversationState(
+        id = id.toString(),
+        title = title.ifBlank { travelPlan?.brief?.destination?.ifBlank { "History chat" } ?: "History chat" },
+        subtitle = travelPlan.toTravelSummaryText(),
+        preview = preview,
+        updatedAt = updateAt.toString(),
+    )
+}
+
+private fun Conversation.toZhituHistoryTripState(): ZhituHistoryTripState? {
+    val plan = travelPlan ?: return null
+    return ZhituHistoryTripState(
+        id = "${id}-trip",
+        conversationId = id.toString(),
+        title = title.ifBlank { plan.brief?.destination?.ifBlank { "History trip" } ?: "History trip" },
+        destination = plan.brief?.destination.orEmpty(),
+        dateRange = plan.brief?.dateRange.orEmpty(),
+        days = plan.brief?.days ?: plan.itineraryDays.size,
+        summary = plan.toTravelSummaryText(),
+        updatedAt = updateAt.toString(),
+        status = travelPlanningState.name,
+    )
+}
+
+private fun FavoriteEntity.toZhituFavoriteItemState(): ZhituFavoriteItemState? {
+    val ref = NodeFavoriteAdapter.decodeRef(this) ?: return null
+    val meta = NodeFavoriteAdapter.decodeMeta(this)
+    return ZhituFavoriteItemState(
+        id = id,
+        title = meta?.title?.ifBlank { "Favorite message" } ?: "Favorite message",
+        subtitle = meta?.previewText.orEmpty(),
+        category = "favorite",
+        conversationId = ref.conversationId.toString(),
+        nodeId = ref.nodeId.toString(),
+    )
+}
+
+private fun TravelPlan?.toFallbackFavoriteItems(): List<ZhituFavoriteItemState> {
+    val plan = this ?: return emptyList()
+
+    fun items(category: String, list: List<TravelRecommendationItem>): List<ZhituFavoriteItemState> {
+        return list.take(2).map { item ->
+            ZhituFavoriteItemState(
+                id = "$category-${item.id}",
+                title = item.title,
+                subtitle = item.subtitle.ifBlank { item.area.ifBlank { item.priceHint.ifBlank { item.ratingText } } },
+                category = category,
+                reason = item.reason,
+                conversationId = plan.conversationId,
+            )
+        }
+    }
+
+    return buildList {
+        addAll(items("hotel", plan.hotels))
+        addAll(items("food", plan.foods))
+        addAll(items("activity", plan.activities))
+    }
+}
+
+private fun Conversation.toZhituCurrentTripSummaryState(): ZhituCurrentTripSummaryState? {
+    val plan = travelPlan ?: return null
+    return ZhituCurrentTripSummaryState(
+        conversationId = id.toString(),
+        title = title.ifBlank { plan.brief?.destination?.ifBlank { "Current trip" } ?: "Current trip" },
+        destination = plan.brief?.destination.orEmpty(),
+        summary = plan.toTravelSummaryText(),
+        days = plan.brief?.days ?: plan.itineraryDays.size,
+        dateRange = plan.brief?.dateRange.orEmpty(),
+        status = travelPlanningState.name,
+    )
+}
+
+private fun TravelPlan?.toTravelSummaryText(): String {
+    val plan = this ?: return ""
+    val brief = plan.brief
+    val parts = buildList {
+        brief?.destination?.takeIf { it.isNotBlank() }?.let(::add)
+        brief?.dateRange?.takeIf { it.isNotBlank() }?.let(::add)
+        val dayCount = brief?.days ?: plan.itineraryDays.size
+        if (dayCount > 0) add("$dayCount days")
+    }
+    return if (parts.isNotEmpty()) parts.joinToString(" / ") else "Trip plan not completed yet"
+}
+
+private fun exportTripMarkdownFile(
+    context: android.content.Context,
+    conversation: Conversation,
+): File {
+    val exportsDir = File(context.cacheDir, "zhitu-exports").apply { mkdirs() }
+    val safeName = (conversation.title.ifBlank { conversation.travelPlan?.brief?.destination ?: "travel-plan" })
+        .replace(Regex("[\\\\/:*?\"<>|\\s]+"), "-")
+        .trim('-')
+        .ifBlank { "travel-plan" }
+    val file = File(exportsDir, "$safeName.md")
+    file.writeText(buildTripMarkdown(conversation))
+    return file
+}
+
+private fun shareTripMarkdownFile(
+    context: android.content.Context,
+    conversation: Conversation,
+) {
+    val file = exportTripMarkdownFile(context, conversation)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/markdown"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_TEXT, buildTripMarkdown(conversation))
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share itinerary"))
+}
+
+private fun buildTripMarkdown(conversation: Conversation): String {
+    val plan = conversation.travelPlan
+    val brief = plan?.brief
+    return buildString {
+        appendLine("# ${conversation.title.ifBlank { brief?.destination ?: "Travel itinerary" }}")
+        appendLine()
+        if (brief != null) {
+            appendLine("## Summary")
+            brief.destination.takeIf { it.isNotBlank() }?.let { appendLine("- Destination: $it") }
+            brief.origin.takeIf { it.isNotBlank() }?.let { appendLine("- Origin: $it") }
+            brief.dateRange.takeIf { it.isNotBlank() }?.let { appendLine("- Dates: $it") }
+            brief.days?.let { appendLine("- Days: $it") }
+            brief.budgetText.takeIf { it.isNotBlank() }?.let { appendLine("- Budget: $it") }
+            brief.userIntentSummary.takeIf { it.isNotBlank() }?.let { appendLine("- Notes: $it") }
+            appendLine()
+        }
+
+        plan?.itineraryDays?.takeIf { it.isNotEmpty() }?.let { days ->
+            appendLine("## Itinerary")
+            days.forEach { day ->
+                appendLine("### Day ${day.dayIndex}: ${day.title}")
+                day.dateText.takeIf { it.isNotBlank() }?.let { appendLine("- Date: $it") }
+                day.weatherHint.takeIf { it.isNotBlank() }?.let { appendLine("- Weather: $it") }
+                day.items.forEach { item ->
+                    appendLine("- ${item.timeSlot.ifBlank { "TBD" }} - ${item.title}")
+                    item.description.takeIf { it.isNotBlank() }?.let { appendLine("  - Detail: $it") }
+                    item.transportHint.takeIf { it.isNotBlank() }?.let { appendLine("  - Transport: $it") }
+                    item.estimatedCost.takeIf { it.isNotBlank() }?.let { appendLine("  - Cost: $it") }
+                }
+                appendLine()
+            }
+        }
+
+        fun appendRecommendationBlock(title: String, items: List<TravelRecommendationItem>) {
+            if (items.isEmpty()) return
+            appendLine("## $title")
+            items.forEach { item ->
+                appendLine("- ${item.title}")
+                item.subtitle.takeIf { it.isNotBlank() }?.let { appendLine("  - Location: $it") }
+                item.reason.takeIf { it.isNotBlank() }?.let { appendLine("  - Reason: $it") }
+                item.priceHint.takeIf { it.isNotBlank() }?.let { appendLine("  - Price: $it") }
+                item.ratingText.takeIf { it.isNotBlank() }?.let { appendLine("  - Rating: $it") }
+            }
+            appendLine()
+        }
+
+        appendRecommendationBlock("Hotel recommendations", plan?.hotels.orEmpty())
+        appendRecommendationBlock("Food recommendations", plan?.foods.orEmpty())
+        appendRecommendationBlock("Activity recommendations", plan?.activities.orEmpty())
+    }
+}
+
+private fun Conversation.toZhituUserState(historyConversationCount: Int): ZhituUserState {
+    val destination = travelPlan?.brief?.destination?.ifBlank { "Trip in progress" } ?: "Trip in progress"
+    return ZhituUserState(
+        name = "Traveler",
+        subtitle = destination,
+        stats = listOf(
+            ZhituStatState("History trips", "${travelPlan?.itineraryDays.orEmpty().size.coerceAtLeast(1)}"),
+            ZhituStatState("Favorites", "${travelPlan?.hotels.orEmpty().size + travelPlan?.foods.orEmpty().size}"),
+            ZhituStatState("Map POIs", "${travelPlan?.pois.orEmpty().size}"),
+        ),
+    )
+}

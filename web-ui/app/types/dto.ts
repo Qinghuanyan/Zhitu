@@ -58,6 +58,81 @@ export interface MessageNodeDto {
   selectIndex: number;
 }
 
+export interface TravelPlanningBriefDto {
+  destination: string;
+  origin: string;
+  dateRange: string;
+  days?: number | null;
+  travelerCount?: number | null;
+  budgetLevel: string;
+  budgetText: string;
+  travelStyleTags: string[];
+  transportPreferences: string[];
+  hardConstraints: string[];
+  userIntentSummary: string;
+}
+
+export interface TravelRecommendationItemDto {
+  id: string;
+  category: string;
+  title: string;
+  subtitle: string;
+  tags: string[];
+  reason: string;
+  priceHint: string;
+  ratingText: string;
+  area: string;
+  inventoryHint: string;
+  bookingUrl: string;
+  source: string;
+  lat?: number | null;
+  lon?: number | null;
+  sourceMessageIds: string[];
+}
+
+export interface TravelPoiDto {
+  id: string;
+  name: string;
+  category: string;
+  lat?: number | null;
+  lon?: number | null;
+  address: string;
+  linkedRecommendationId?: string | null;
+  linkedItineraryItemId?: string | null;
+}
+
+export interface TravelItineraryItemDto {
+  id: string;
+  timeSlot: string;
+  title: string;
+  description: string;
+  category: string;
+  poiRefId?: string | null;
+  estimatedCost: string;
+  transportHint: string;
+}
+
+export interface TravelItineraryDayDto {
+  dayIndex: number;
+  title: string;
+  dateText: string;
+  weatherHint: string;
+  items: TravelItineraryItemDto[];
+}
+
+export interface TravelPlanDto {
+  conversationId: string;
+  brief?: TravelPlanningBriefDto | null;
+  hotels: TravelRecommendationItemDto[];
+  foods: TravelRecommendationItemDto[];
+  activities: TravelRecommendationItemDto[];
+  pois: TravelPoiDto[];
+  itineraryDays: TravelItineraryDayDto[];
+  generatedAt?: number | null;
+  generationVersion: number;
+  status: string;
+}
+
 export interface ConversationDto {
   id: string;
   assistantId: string;
@@ -65,6 +140,8 @@ export interface ConversationDto {
   messages: MessageNodeDto[];
   truncateIndex: number;
   chatSuggestions: string[];
+  travelPlan?: TravelPlanDto | null;
+  travelPlanningState?: string;
   isPinned: boolean;
   createAt: number;
   updateAt: number;

@@ -1,0 +1,16 @@
+(function () {
+  const openBtn = document.getElementById("user-avatar-btn");
+  if (openBtn) {
+    openBtn.click();
+  }
+  const buttons = Array.from(
+    document.querySelectorAll('#profile-tab-history [data-zhitu-action="resume_history_session"]')
+  );
+  const btn = buttons[1] || buttons[0];
+  if (!btn) return "missing-history-resume";
+  btn.click();
+  return JSON.stringify({
+    targetConversationId: btn.dataset.conversationId || "",
+    currentTab: window.__ZHITU_STATE__ && window.__ZHITU_STATE__.currentTab,
+  });
+})()

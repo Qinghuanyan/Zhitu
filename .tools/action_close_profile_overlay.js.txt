@@ -1,0 +1,9 @@
+(function () {
+  const btn = document.getElementById("profile-overlay-close");
+  if (!btn) return "missing-profile-overlay-close";
+  btn.click();
+  const overlay = document.getElementById("profile-overlay");
+  return JSON.stringify({
+    overlayHidden: overlay ? overlay.classList.contains("hidden") : null,
+  });
+})()
