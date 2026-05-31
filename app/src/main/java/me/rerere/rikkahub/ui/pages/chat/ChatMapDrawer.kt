@@ -79,7 +79,7 @@ import java.util.Locale
 
 private const val TAG = "ChatMapDrawer"
 private const val AMAP_PACKAGE_NAME = "com.autonavi.minimap"
-private const val DEVICE_LOCATION_LABEL = "设备定位"
+private const val DEVICE_LOCATION_LABEL = "当前位置"
 
 private data class LocationPoint(
     val latLng: LatLng,
@@ -880,16 +880,14 @@ private fun configureLocationClient(locationClient: AMapLocationClient) {
 
 private fun buildLocationPoint(location: AMapLocation): LocationPoint {
     val coordinateText = String.format(Locale.US, "%.5f, %.5f", location.latitude, location.longitude)
+    val poiName = location.poiName?.trim().orEmpty()
+    val address = location.address?.trim().orEmpty()
     return LocationPoint(
         latLng = LatLng(location.latitude, location.longitude),
-        title = location.poiName,
+        title = poiName.ifBlank { DEVICE_LOCATION_LABEL },
         snippet = buildString {
-            append("设备定位")
-            location.poiName?.takeIf { it.isNotBlank() }?.let {
-                if (isNotBlank()) append(" 路 ")
-                append(it)
-            }
-            location.address?.takeIf { it.isNotBlank() }?.let {
+            poiName.takeIf { it.isNotBlank() }?.let { append(it) }
+            address.takeIf { it.isNotBlank() }?.let {
                 if (isNotBlank()) append(" · ")
                 append(it)
             }

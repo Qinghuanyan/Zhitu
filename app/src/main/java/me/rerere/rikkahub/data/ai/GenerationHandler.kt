@@ -4,9 +4,11 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.Serializable
@@ -27,6 +29,7 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.registry.ModelRegistry
+import me.rerere.ai.ui.MessageChunk
 import me.rerere.ai.ui.UIMessage
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.ToolApprovalState
@@ -51,6 +54,7 @@ import java.util.Locale
 import kotlin.time.Clock
 
 private const val TAG = "GenerationHandler"
+private const val PER_MODEL_GENERATION_TIMEOUT_MS = 180_000L
 
 @Serializable
 sealed interface GenerationChunk {
@@ -58,6 +62,12 @@ sealed interface GenerationChunk {
         val messages: List<UIMessage>
     ) : GenerationChunk
 }
+
+data class GenerationFallbackNotice(
+    val fromModel: Model,
+    val toModel: Model,
+    val cause: Throwable,
+)
 
 class GenerationHandler(
     private val context: Context,
@@ -140,6 +150,7 @@ class GenerationHandler(
         messages: List<UIMessage>,
         onUpdateMessages: suspend (List<UIMessage>) -> Unit,
         onTargetChanged: (Model) -> Unit,
+        onFallback: ((GenerationFallbackNotice) -> Unit)? = null,
         transformers: List<MessageTransformer>,
         model: Model,
         tools: List<Tool>,
@@ -159,28 +170,47 @@ class GenerationHandler(
                     )
                 }
                 onTargetChanged(target.model)
-                generateInternal(
-                    assistant = assistant,
-                    settings = settings,
-                    messages = messages,
-                    onUpdateMessages = onUpdateMessages,
-                    transformers = transformers,
-                    model = target.model,
-                    providerImpl = target.providerImpl,
-                    provider = target.provider,
-                    tools = tools,
-                    memories = memories,
-                    stream = stream,
-                )
+                withTimeout(PER_MODEL_GENERATION_TIMEOUT_MS) {
+                    generateInternal(
+                        assistant = assistant,
+                        settings = settings,
+                        messages = messages,
+                        onUpdateMessages = onUpdateMessages,
+                        transformers = transformers,
+                        model = target.model,
+                        providerImpl = target.providerImpl,
+                        provider = target.provider,
+                        tools = tools,
+                        memories = memories,
+                        stream = stream,
+                    )
+                }
                 return target.model
             } catch (error: Throwable) {
-                if (error is CancellationException) throw error
+                if (error is TimeoutCancellationException) {
+                    Log.w(
+                        TAG,
+                        "generateInternalWithFallback: timeout on ${target.model.modelId} / ${target.provider.name}",
+                        error
+                    )
+                } else if (error is CancellationException) {
+                    throw error
+                }
                 lastError = error
                 Log.w(
                     TAG,
                     "generateInternalWithFallback: failed on ${target.model.modelId} / ${target.provider.name}",
                     error
                 )
+                targets.getOrNull(index + 1)?.let { nextTarget ->
+                    onFallback?.invoke(
+                        GenerationFallbackNotice(
+                            fromModel = target.model,
+                            toModel = nextTarget.model,
+                            cause = error,
+                        )
+                    )
+                }
                 onUpdateMessages(baseMessages)
             }
         }
@@ -197,6 +227,7 @@ class GenerationHandler(
         assistant: Assistant,
         memories: List<AssistantMemory>? = null,
         tools: List<Tool> = emptyList(),
+        onFallback: ((GenerationFallbackNotice) -> Unit)? = null,
         maxSteps: Int = 256,
     ): Flow<GenerationChunk> = flow {
         var activeModel = model
@@ -263,6 +294,7 @@ class GenerationHandler(
                         )
                     },
                     onTargetChanged = { activeModel = it },
+                    onFallback = onFallback,
                     transformers = inputTransformers,
                     model = activeModel,
                     tools = toolsInternal,
@@ -441,6 +473,63 @@ class GenerationHandler(
         }
 
     }.flowOn(Dispatchers.IO)
+
+    suspend fun generateSingleTextWithFallback(
+        settings: Settings,
+        model: Model,
+        messages: List<UIMessage>,
+        paramsBuilder: (Model) -> TextGenerationParams,
+        tools: List<Tool> = emptyList(),
+        onFallback: ((GenerationFallbackNotice) -> Unit)? = null,
+    ): MessageChunk {
+        val targets = resolveGenerationTargets(settings, model, tools)
+        var lastError: Throwable? = null
+
+        for ((index, target) in targets.withIndex()) {
+            try {
+                if (index > 0) {
+                    Log.w(
+                        TAG,
+                        "generateSingleTextWithFallback: fallback ${model.modelId} -> ${target.model.modelId}"
+                    )
+                }
+                return withTimeout(PER_MODEL_GENERATION_TIMEOUT_MS) {
+                    target.providerImpl.generateText(
+                        providerSetting = target.provider,
+                        messages = messages,
+                        params = paramsBuilder(target.model),
+                    )
+                }
+            } catch (error: Throwable) {
+                if (error is TimeoutCancellationException) {
+                    Log.w(
+                        TAG,
+                        "generateSingleTextWithFallback: timeout on ${target.model.modelId} / ${target.provider.name}",
+                        error
+                    )
+                } else if (error is CancellationException) {
+                    throw error
+                }
+                lastError = error
+                Log.w(
+                    TAG,
+                    "generateSingleTextWithFallback: failed on ${target.model.modelId} / ${target.provider.name}",
+                    error
+                )
+                targets.getOrNull(index + 1)?.let { nextTarget ->
+                    onFallback?.invoke(
+                        GenerationFallbackNotice(
+                            fromModel = target.model,
+                            toModel = nextTarget.model,
+                            cause = error,
+                        )
+                    )
+                }
+            }
+        }
+
+        throw lastError ?: IllegalStateException("No available model target")
+    }
 
     private suspend fun generateInternal(
         assistant: Assistant,

@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "scope": "project-local",
+  "last_updated": "2026-05-30",
+  "retention_policy": {
+    "archive_after_miss_streak": 200,
+    "archive_after_failure_count": 5,
+    "archive_requires_success_not_greater_than_failure": true,
+    "delete_requires_manual_confirmation": true
+  },
+  "lessons": {
+    "LESSON-20260530-01": {
+      "use_count": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "miss_streak": 0,
+      "last_used": null,
+      "last_updated": "2026-05-30",
+      "archived": false
+    }
+  }
+}

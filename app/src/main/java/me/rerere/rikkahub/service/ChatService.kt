@@ -10,6 +10,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +34,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.jsonObject
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.ModelAbility
@@ -50,6 +53,7 @@ import me.rerere.rikkahub.CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.RouteActivity
 import me.rerere.rikkahub.data.ai.GenerationChunk
+import me.rerere.rikkahub.data.ai.GenerationFallbackNotice
 import me.rerere.rikkahub.data.ai.GenerationHandler
 import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.LocalTools
@@ -106,9 +110,12 @@ import me.rerere.rikkahub.utils.stripMarkdown
 import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Clock
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatService"
+private const val GENERATION_PROGRESS_PERSIST_INTERVAL_MS = 1_500L
+private const val GENERATION_PROGRESS_PERSIST_DELAY_MS = 400L
 
 data class ChatError(
     val id: Uuid = Uuid.random(),
@@ -154,6 +161,8 @@ class ChatService(
     // 统一会话管理
     private val sessions = ConcurrentHashMap<Uuid, ConversationSession>()
     private val _sessionsVersion = MutableStateFlow(0L)
+    private val progressPersistJobs = ConcurrentHashMap<Uuid, Job>()
+    private val progressPersistAt = ConcurrentHashMap<Uuid, Long>()
 
     // 错误状态
     private val _errors = MutableStateFlow<List<ChatError>>(emptyList())
@@ -265,6 +274,79 @@ class ChatService(
         return session.generationJob
     }
 
+    private fun Conversation.hasSessionState(): Boolean {
+        return messageNodes.isNotEmpty() || travelPlan != null || chatSuggestions.isNotEmpty()
+    }
+
+    private fun Conversation.hasInterruptedGenerationState(): Boolean {
+        val hasUnfinishedAssistantMessage = currentMessages.any { message ->
+            message.role == MessageRole.ASSISTANT && message.finishedAt == null
+        }
+        return hasUnfinishedAssistantMessage ||
+            travelPlanningState == TravelPlanningState.ExtractingBrief ||
+            travelPlanningState == TravelPlanningState.GeneratingPlan
+    }
+
+    private fun Conversation.finishInterruptedGeneration(): Conversation {
+        val finishedAt = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+        val nextState = when (travelPlanningState) {
+            TravelPlanningState.ExtractingBrief,
+            TravelPlanningState.GeneratingPlan -> if (travelPlan?.brief?.canGenerate() == true) {
+                TravelPlanningState.ReadyToGenerate
+            } else {
+                TravelPlanningState.DraftBrief
+            }
+
+            else -> travelPlanningState
+        }
+        val nextPlan = travelPlan?.let { plan ->
+            when (travelPlanningState) {
+                TravelPlanningState.ExtractingBrief,
+                TravelPlanningState.GeneratingPlan -> plan.copy(
+                    status = if (plan.brief?.canGenerate() == true) {
+                        TravelPlanStatus.ready_to_generate
+                    } else {
+                        TravelPlanStatus.draft_brief
+                    }
+                )
+
+                else -> plan
+            }
+        }
+
+        return copy(
+            messageNodes = messageNodes.map { node ->
+                node.copy(
+                    messages = node.messages.map { message ->
+                        val normalized = message.finishReasoning()
+                        if (normalized.role == MessageRole.ASSISTANT && normalized.finishedAt == null) {
+                            normalized.copy(finishedAt = finishedAt)
+                        } else {
+                            normalized
+                        }
+                    }
+                )
+            },
+            travelPlanningState = nextState,
+            travelPlan = nextPlan,
+        )
+    }
+
+    private suspend fun recoverInterruptedConversationIfNeeded(
+        conversationId: Uuid,
+        conversation: Conversation,
+    ): Conversation {
+        if (!conversation.hasInterruptedGenerationState()) return conversation
+        val recoveredConversation = conversation.finishInterruptedGeneration()
+        saveConversation(conversationId, recoveredConversation)
+        addError(
+            error = IllegalStateException("检测到上次生成未完成，已恢复已保存内容，可继续重试。"),
+            conversationId = conversationId,
+            title = "已恢复未完成会话"
+        )
+        return recoveredConversation
+    }
+
     fun getConversationJobs(): Flow<Map<Uuid, Job?>> {
         return _sessionsVersion.flatMapLatest {
             val currentSessions = sessions.values.toList()
@@ -283,11 +365,27 @@ class ChatService(
     // ---- 初始化对话 ----
 
     suspend fun initializeConversation(conversationId: Uuid) {
-        getOrCreateSession(conversationId) // 确保 session 存在
+        val session = getOrCreateSession(conversationId)
+        val sessionConversation = session.state.value
         val conversation = conversationRepo.getConversationById(conversationId)
+        if (session.isGenerating && sessionConversation.hasSessionState()) {
+            settingsStore.updateAssistant(sessionConversation.assistantId)
+            return
+        }
+
         if (conversation != null) {
-            updateConversation(conversationId, conversation)
-            settingsStore.updateAssistant(conversation.assistantId)
+            val preferredConversation = if (
+                sessionConversation.hasSessionState() &&
+                sessionConversation.updateAt.isAfter(conversation.updateAt)
+            ) {
+                sessionConversation
+            } else {
+                recoverInterruptedConversationIfNeeded(conversationId, conversation)
+            }
+            updateConversation(conversationId, preferredConversation)
+            settingsStore.updateAssistant(preferredConversation.assistantId)
+        } else if (sessionConversation.hasSessionState()) {
+            settingsStore.updateAssistant(sessionConversation.assistantId)
         } else {
             // 新建对话, 并添加预设消息
             val currentSettings = settingsStore.settingsFlowRaw.first()
@@ -382,6 +480,51 @@ class ChatService(
                 else -> part
             }
         }
+    }
+
+    private fun buildFallbackTitle(notice: GenerationFallbackNotice): String {
+        return if (notice.cause.javaClass.simpleName.contains("Timeout")) {
+            "当前模型超过 3 分钟未完成，已切换备用模型"
+        } else if (notice.cause is CancellationException) {
+            "当前模型已切换"
+        } else {
+            "当前模型不可用，已切换备用模型"
+        }
+    }
+
+    private fun formatModelSwitchNotice(notice: GenerationFallbackNotice): String {
+        val fromName = notice.fromModel.displayName.ifBlank { notice.fromModel.modelId }
+        val toName = notice.toModel.displayName.ifBlank { notice.toModel.modelId }
+        return "已从 $fromName 切换到 $toName"
+    }
+
+    private suspend fun generateSingleTextWithFallback(
+        conversationId: Uuid?,
+        settings: me.rerere.rikkahub.data.datastore.Settings,
+        model: me.rerere.ai.provider.Model,
+        messages: List<UIMessage>,
+        thinkingBudget: Int = 0,
+        title: String? = null,
+    ): String {
+        val result = generationHandler.generateSingleTextWithFallback(
+            settings = settings,
+            model = model,
+            messages = messages,
+            paramsBuilder = { targetModel ->
+                TextGenerationParams(
+                    model = targetModel,
+                    thinkingBudget = thinkingBudget,
+                )
+            },
+            onFallback = { notice ->
+                addError(
+                    error = IllegalStateException(formatModelSwitchNotice(notice)),
+                    conversationId = conversationId,
+                    title = title ?: buildFallbackTitle(notice)
+                )
+            }
+        )
+        return result.choices.firstOrNull()?.message?.toText().orEmpty()
     }
 
     // ---- 重新生成消息 ----
@@ -576,6 +719,13 @@ class ChatService(
                         )
                     }
                 },
+                onFallback = { notice ->
+                    addError(
+                        error = IllegalStateException(formatModelSwitchNotice(notice)),
+                        conversationId = conversationId,
+                        title = buildFallbackTitle(notice)
+                    )
+                },
             ).onCompletion {
                 // 取消 Live Update 通知
                 cancelLiveUpdateNotification(conversationId)
@@ -587,7 +737,7 @@ class ChatService(
                     },
                     updateAt = Instant.now()
                 )
-                updateConversation(conversationId, updatedConversation)
+                saveConversation(conversationId, updatedConversation)
 
                 // Show notification if app is not in foreground
                 if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration) {
@@ -598,7 +748,9 @@ class ChatService(
                     is GenerationChunk.Messages -> {
                         val updatedConversation = getConversationFlow(conversationId).value
                             .updateCurrentMessages(chunk.messages)
+                            .copy(updateAt = Instant.now())
                         updateConversation(conversationId, updatedConversation)
+                        persistConversationProgress(conversationId, updatedConversation)
 
                         // 如果应用不在前台，发送 Live Update 通知
                         if (!isForeground.value && settings.displaySetting.enableNotificationOnMessageGeneration && settings.displaySetting.enableLiveUpdateNotification) {
@@ -612,6 +764,9 @@ class ChatService(
             cancelLiveUpdateNotification(conversationId)
 
             it.printStackTrace()
+            val recoveredConversation = getConversationFlow(conversationId).value
+                .finishInterruptedGeneration()
+            saveConversation(conversationId, recoveredConversation)
             addError(it, conversationId, title = context.getString(R.string.error_title_generation))
             Logging.log(TAG, "handleMessageComplete: $it")
             Logging.log(TAG, it.stackTraceToString())
@@ -701,11 +856,10 @@ class ChatService(
         runCatching {
             val settings = settingsStore.settingsFlow.first()
             val model = settings.findModelById(settings.titleModelId) ?: return
-            val provider = model.findProvider(settings.providers) ?: return
-
-            val providerHandler = providerManager.getProviderByType(provider)
-            val result = providerHandler.generateText(
-                providerSetting = provider,
+            val generatedTitle = generateSingleTextWithFallback(
+                conversationId = conversationId,
+                settings = settings,
+                model = model,
                 messages = listOf(
                     UIMessage.user(
                         prompt = settings.titlePrompt.applyPlaceholders(
@@ -714,17 +868,14 @@ class ChatService(
                                 .takeLast(4).joinToString("\n\n") { it.summaryAsText() })
                     ),
                 ),
-                params = TextGenerationParams(
-                    model = model,
-                    thinkingBudget = 0,
-                ),
+                title = "标题模型已切换"
             )
 
             // 生成完，conversation可能不是最新了，因此需要重新获取
             conversationRepo.getConversationById(conversation.id)?.let {
                 saveConversation(
                     conversationId,
-                    it.copy(title = result.choices[0].message?.toText()?.trim() ?: "")
+                    it.copy(title = generatedTitle.trim())
                 )
             }
         }.onFailure {
@@ -739,7 +890,6 @@ class ChatService(
         runCatching {
             val settings = settingsStore.settingsFlow.first()
             val model = settings.findModelById(settings.suggestionModelId) ?: return
-            val provider = model.findProvider(settings.providers) ?: return
 
             sessions[conversationId]?.let { session ->
                 updateConversation(
@@ -748,9 +898,10 @@ class ChatService(
                 )
             }
 
-            val providerHandler = providerManager.getProviderByType(provider)
-            val result = providerHandler.generateText(
-                providerSetting = provider,
+            val suggestionText = generateSingleTextWithFallback(
+                conversationId = conversationId,
+                settings = settings,
+                model = model,
                 messages = listOf(
                     UIMessage.user(
                         settings.suggestionPrompt.applyPlaceholders(
@@ -759,13 +910,10 @@ class ChatService(
                                 .takeLast(8).joinToString("\n\n") { it.summaryAsText() }),
                     )
                 ),
-                params = TextGenerationParams(
-                    model = model,
-                    thinkingBudget = 0,
-                ),
+                title = "建议模型已切换"
             )
             val suggestions =
-                result.choices[0].message?.toText()?.split("\n")?.map { it.trim() }
+                suggestionText.split("\n").map { it.trim() }
                     ?.filter { it.isNotBlank() } ?: emptyList()
 
             val latestConversation = conversationRepo.getConversationById(conversationId)
@@ -791,9 +939,11 @@ class ChatService(
         conversation: Conversation,
         autoGeneratePlan: Boolean = true,
     ) {
-        updateConversationState(conversationId) { current ->
+        val extractingConversation = getConversationFlow(conversationId).value.let { current ->
             current.copy(travelPlanningState = TravelPlanningState.ExtractingBrief)
         }
+        updateConversation(conversationId, extractingConversation)
+        persistConversationProgress(conversationId, extractingConversation, immediate = true)
         val content = buildTravelConversationContent(conversation.currentMessages)
         if (content.isBlank()) {
             val latestConversation = conversationRepo.getConversationById(conversationId)
@@ -943,7 +1093,7 @@ class ChatService(
             return
         }
 
-        updateConversationState(conversationId) { current ->
+        val generatingConversation = getConversationFlow(conversationId).value.let { current ->
             current.copy(
                 travelPlanningState = TravelPlanningState.GeneratingPlan,
                 travelPlan = (current.travelPlan ?: TravelPlan(conversationId = conversationId.toString())).copy(
@@ -952,6 +1102,8 @@ class ChatService(
                 )
             )
         }
+        updateConversation(conversationId, generatingConversation)
+        persistConversationProgress(conversationId, generatingConversation, immediate = true)
 
         val planningFacts = travelPlanningDataRepository.buildPlanningFacts(
             destination = ensuredBrief.destination,
@@ -1035,18 +1187,13 @@ class ChatService(
         val settings = settingsStore.settingsFlow.first()
         val model = settings.getCurrentChatModel()
             ?: throw IllegalStateException("No chat model available")
-        val provider = model.findProvider(settings.providers)
-            ?: throw IllegalStateException("Provider not found")
-        val providerHandler = providerManager.getProviderByType(provider)
-        val result = providerHandler.generateText(
-            providerSetting = provider,
+        return generateSingleTextWithFallback(
+            conversationId = null,
+            settings = settings,
+            model = model,
             messages = listOf(UIMessage.user(prompt)),
-            params = TextGenerationParams(
-                model = model,
-                thinkingBudget = 0,
-            ),
+            title = "规划模型已切换"
         )
-        return result.choices[0].message?.toText().orEmpty()
     }
 
     private fun buildTravelConversationContent(messages: List<UIMessage>): String {
@@ -2118,13 +2265,13 @@ class ChatService(
         }
     }
 
-    suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
+    private suspend fun persistConversationToRepository(conversationId: Uuid, conversation: Conversation): Conversation {
         val exists = conversationRepo.existsConversationById(conversation.id)
         if (!exists && conversation.title.isBlank() && conversation.messageNodes.isEmpty()) {
-            return // 新会话且为空时不保存
+            return conversation
         }
 
-        val updatedConversation = conversation.copy()
+        val updatedConversation = conversation.copy(updateAt = Instant.now())
         updateConversation(conversationId, updatedConversation)
 
         if (!exists) {
@@ -2132,6 +2279,44 @@ class ChatService(
         } else {
             conversationRepo.updateConversation(updatedConversation)
         }
+        return updatedConversation
+    }
+
+    private fun clearProgressPersistState(conversationId: Uuid) {
+        progressPersistJobs.remove(conversationId)?.cancel()
+        progressPersistAt.remove(conversationId)
+    }
+
+    private fun persistConversationProgress(
+        conversationId: Uuid,
+        conversation: Conversation,
+        immediate: Boolean = false,
+    ) {
+        val now = System.currentTimeMillis()
+        val lastPersistAt = progressPersistAt[conversationId] ?: 0L
+        val shouldPersistNow = immediate || now - lastPersistAt >= GENERATION_PROGRESS_PERSIST_INTERVAL_MS
+
+        progressPersistJobs.remove(conversationId)?.cancel()
+
+        if (shouldPersistNow) {
+            progressPersistAt[conversationId] = now
+            appScope.launch {
+                persistConversationToRepository(conversationId, conversation)
+            }
+            return
+        }
+
+        val delayedJob = appScope.launch {
+            delay(GENERATION_PROGRESS_PERSIST_DELAY_MS)
+            progressPersistAt[conversationId] = System.currentTimeMillis()
+            persistConversationToRepository(conversationId, conversation)
+        }
+        progressPersistJobs[conversationId] = delayedJob
+    }
+
+    suspend fun saveConversation(conversationId: Uuid, conversation: Conversation) {
+        clearProgressPersistState(conversationId)
+        persistConversationToRepository(conversationId, conversation)
     }
 
     // ---- 翻译消息 ----
