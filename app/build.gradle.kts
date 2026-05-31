@@ -13,11 +13,20 @@ plugins {
 }
 
 val generatedZhituAssetDir = layout.buildDirectory.dir("generated/zhitu-assets/main")
+val zhituHtmlAssetSource = listOf(
+    rootProject.file("../ZhituHtml/ai_travel_planner.html"),
+    rootProject.file("ai_travel_planner.html")
+).firstOrNull { it.exists() }
 
 val syncZhituHtmlAsset by tasks.registering(Copy::class) {
-    from(rootProject.file("../ZhituHtml/ai_travel_planner.html"))
+    zhituHtmlAssetSource?.let { from(it) }
     into(generatedZhituAssetDir)
     rename { "zhitu.html" }
+    doFirst {
+        check(zhituHtmlAssetSource != null) {
+            "Missing Zhitu HTML source. Expected ../ZhituHtml/ai_travel_planner.html or ai_travel_planner.html"
+        }
+    }
 }
 
 val firebaseAwareVariants = mapOf(
