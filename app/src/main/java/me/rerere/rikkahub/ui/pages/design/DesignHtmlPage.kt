@@ -3,15 +3,21 @@ package me.rerere.rikkahub.ui.pages.design
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -141,17 +147,28 @@ fun DesignHtmlPage(assetPath: String) {
     var injectedUrl by remember(assetPath) { mutableStateOf<String?>(null) }
     val bindingScript = remember(assetPath) { buildBindingScript(assetPath) }
 
-    WebView(
-        state = state,
-        modifier = Modifier.fillMaxSize(),
-        onUpdated = { webView ->
-            val currentUrl = state.currentUrl
-            if (!state.isLoading && !currentUrl.isNullOrBlank() && injectedUrl != currentUrl) {
-                injectedUrl = currentUrl
-                webView.evaluateJavascript(bindingScript, null)
+    Box(Modifier.fillMaxSize()) {
+        WebView(
+            state = state,
+            modifier = Modifier.fillMaxSize(),
+            onUpdated = { webView ->
+                val currentUrl = state.currentUrl
+                if (!state.isLoading && !currentUrl.isNullOrBlank() && injectedUrl != currentUrl) {
+                    injectedUrl = currentUrl
+                    webView.evaluateJavascript(bindingScript, null)
+                }
             }
+        )
+
+        if (navController.canPop) {
+            BackButton(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, top = 12.dp)
+            )
         }
-    )
+    }
 }
 
 private fun buildBindingScript(assetPath: String): String {

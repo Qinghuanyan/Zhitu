@@ -6,6 +6,9 @@ import android.os.Looper
 import android.util.Log
 import android.webkit.JavascriptInterface
 import android.widget.Toast
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.Composable
@@ -41,6 +44,7 @@ import me.rerere.rikkahub.data.model.TravelRecommendationItem
 import me.rerere.rikkahub.data.model.TravelSearchSuggestion
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FavoriteRepository
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.webview.WebView
 import me.rerere.rikkahub.ui.components.webview.rememberWebViewState
 import me.rerere.rikkahub.ui.context.LocalNavController
@@ -59,6 +63,8 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.uuid.Uuid
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 
 private const val ZHITU_ASSET_URL = "file:///android_asset/zhitu.html"
 private const val ZHITU_DEBUG_TAG = "ZhituTravelHub"
@@ -861,12 +867,23 @@ fun TravelHubHtmlPage(
         }
     }
 
-    WebView(
-        state = webViewState,
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding(),
-    )
+    Box(Modifier.fillMaxSize()) {
+        WebView(
+            state = webViewState,
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
+        )
+
+        if (nav.canPop) {
+            BackButton(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, top = 12.dp)
+            )
+        }
+    }
 }
 
 private fun normalizeRecommendationCategory(value: String?): String? = when (value?.lowercase()) {

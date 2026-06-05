@@ -62,6 +62,7 @@ import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Conversation
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.ui.components.ai.ChatInput
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.context.Navigator
@@ -249,6 +250,7 @@ private fun ChatPageContent(
                     bigScreen = bigScreen,
                     drawerState = drawerState,
                     previewMode = previewMode,
+                    canNavigateBack = navController.canPop,
                     onOpenMap = {
                         navController.navigate(
                             Screen.ChatMap(
@@ -425,6 +427,7 @@ private fun TopBar(
     drawerState: DrawerState,
     bigScreen: Boolean,
     previewMode: Boolean,
+    canNavigateBack: Boolean,
     onOpenMap: () -> Unit,
     onClickMenu: () -> Unit,
     onNewChat: () -> Unit,
@@ -439,7 +442,9 @@ private fun TopBar(
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
         navigationIcon = {
-            if (!bigScreen) {
+            if (canNavigateBack) {
+                BackButton()
+            } else if (!bigScreen) {
                 IconButton(
                     onClick = {
                         scope.launch { drawerState.open() }
