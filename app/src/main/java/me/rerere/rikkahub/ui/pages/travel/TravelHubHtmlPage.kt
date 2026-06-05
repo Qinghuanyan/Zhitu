@@ -663,6 +663,22 @@ fun TravelHubHtmlPage(
                 currentTab = ZhituShellTab.Itinerary
             }
 
+            "update_itinerary_item" -> {
+                clearInlineRecommendations()
+                val dayIndex = payload?.optInt("dayIndex", Int.MIN_VALUE) ?: Int.MIN_VALUE
+                val itemId = payload?.optString("itemId").orEmpty()
+                vm.updateItineraryItem(
+                    dayIndex = dayIndex,
+                    itemId = itemId,
+                    timeSlot = payload?.optString("timeSlot").orEmpty(),
+                    title = payload?.optString("title").orEmpty(),
+                    description = payload?.optString("description").orEmpty(),
+                    transportHint = payload?.optString("transportHint").orEmpty(),
+                    estimatedCost = payload?.optString("estimatedCost").orEmpty(),
+                )
+                currentTab = ZhituShellTab.Itinerary
+            }
+
             "resume_history_session" -> {
                 clearInlineRecommendations()
                 val conversationId = payload?.optString("conversationId").orEmpty()
@@ -787,6 +803,7 @@ fun TravelHubHtmlPage(
             allowContentAccess = true
             allowFileAccessFromFileURLs = true
             allowUniversalAccessFromFileURLs = true
+            blockNetworkLoads = true
             useWideViewPort = true
             loadWithOverviewMode = true
             builtInZoomControls = false
