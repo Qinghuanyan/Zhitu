@@ -84,6 +84,7 @@ import me.rerere.rikkahub.data.model.TravelRecommendationItem
 import me.rerere.rikkahub.data.model.TravelSearchSuggestion
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FavoriteRepository
+import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.context.Navigator
 import me.rerere.rikkahub.ui.hooks.ImeLazyListAutoScroller
@@ -262,116 +263,127 @@ fun TravelHubPage(
         handled = true
     }
 
-    Scaffold(
-        containerColor = TravelBg,
-        bottomBar = {
-            if (!(tab == TravelTab.Ai && imeVisible)) {
-                NavigationBar(containerColor = Color.White) {
-                    TravelTab.entries.forEach { item ->
-                        NavigationBarItem(
-                            selected = tab == item,
-                            onClick = { tab = item },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = TravelTealDeep,
-                                selectedTextColor = TravelTealDeep,
-                                indicatorColor = Color(0xFFDDF7F1),
-                                unselectedIconColor = TravelTextMuted,
-                                unselectedTextColor = TravelTextMuted,
-                            ),
-                            icon = { Text(item.icon) },
-                            label = { Text(item.label) },
-                        )
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            containerColor = TravelBg,
+            bottomBar = {
+                if (!(tab == TravelTab.Ai && imeVisible)) {
+                    NavigationBar(containerColor = Color.White) {
+                        TravelTab.entries.forEach { item ->
+                            NavigationBarItem(
+                                selected = tab == item,
+                                onClick = { tab = item },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = TravelTealDeep,
+                                    selectedTextColor = TravelTealDeep,
+                                    indicatorColor = Color(0xFFDDF7F1),
+                                    unselectedIconColor = TravelTextMuted,
+                                    unselectedTextColor = TravelTextMuted,
+                                ),
+                                icon = { Text(item.icon) },
+                                label = { Text(item.label) },
+                            )
+                        }
                     }
                 }
-            }
-        },
-    ) { inner ->
-        when (tab) {
-            TravelTab.Home -> IntegratedHomeTab(
-                modifier = Modifier.padding(inner),
-                conversation = conversation,
-                ui = ui,
-                weatherSummary = displayedWeatherSummary,
-                onQueryChange = vm::onTravelSearchQueryChange,
-                onSelectSuggestion = vm::selectTravelDestination,
-                onStartPlanning = { showSheet = true },
-                onGeneratePlan = vm::generateTravelPlan,
-                onOpenHotels = { nav.navigate(Screen.TravelHotels(id.toString())) },
-                onOpenFoods = { nav.navigate(Screen.TravelFoods(id.toString())) },
-                onOpenActivities = { nav.navigate(Screen.TravelActivities(id.toString())) },
-                onOpenMap = { tab = TravelTab.Map },
-                onOpenAi = { tab = TravelTab.Ai },
-                onOpenItinerary = { tab = TravelTab.Itinerary },
-                onOpenMine = { tab = TravelTab.Mine },
-            )
+            },
+        ) { inner ->
+            when (tab) {
+                TravelTab.Home -> IntegratedHomeTab(
+                    modifier = Modifier.padding(inner),
+                    conversation = conversation,
+                    ui = ui,
+                    weatherSummary = displayedWeatherSummary,
+                    onQueryChange = vm::onTravelSearchQueryChange,
+                    onSelectSuggestion = vm::selectTravelDestination,
+                    onStartPlanning = { showSheet = true },
+                    onGeneratePlan = vm::generateTravelPlan,
+                    onOpenHotels = { nav.navigate(Screen.TravelHotels(id.toString())) },
+                    onOpenFoods = { nav.navigate(Screen.TravelFoods(id.toString())) },
+                    onOpenActivities = { nav.navigate(Screen.TravelActivities(id.toString())) },
+                    onOpenMap = { tab = TravelTab.Map },
+                    onOpenAi = { tab = TravelTab.Ai },
+                    onOpenItinerary = { tab = TravelTab.Itinerary },
+                    onOpenMine = { tab = TravelTab.Mine },
+                )
 
-            TravelTab.Map -> MapTab(
-                modifier = Modifier.padding(inner),
-                conversation = conversation,
-                ui = ui,
-                mapPois = visibleMapPois,
-                highlightPoiId = highlightPoiId,
-                onQueryChange = vm::onTravelSearchQueryChange,
-                onSelectSuggestion = vm::selectTravelDestination,
-                onSelectFilter = vm::selectTravelMapFilter,
-            )
+                TravelTab.Map -> MapTab(
+                    modifier = Modifier.padding(inner),
+                    conversation = conversation,
+                    ui = ui,
+                    mapPois = visibleMapPois,
+                    highlightPoiId = highlightPoiId,
+                    onQueryChange = vm::onTravelSearchQueryChange,
+                    onSelectSuggestion = vm::selectTravelDestination,
+                    onSelectFilter = vm::selectTravelMapFilter,
+                )
 
-            TravelTab.Itinerary -> IntegratedItineraryTab(
-                modifier = Modifier.padding(inner),
-                conversation = conversation,
-                onStartPlanning = { showSheet = true },
-                onOpenAi = { tab = TravelTab.Ai },
-                onOpenMap = { tab = TravelTab.Map },
-                onExportTrip = {
-                    val file = exportTripMarkdownFile(context, conversation)
-                    Toast.makeText(context, "宸插鍑哄埌 ${file.absolutePath}", Toast.LENGTH_LONG).show()
-                },
-                onShareTrip = {
-                    shareTripMarkdownFile(context, conversation)
-                },
-            )
+                TravelTab.Itinerary -> IntegratedItineraryTab(
+                    modifier = Modifier.padding(inner),
+                    conversation = conversation,
+                    onStartPlanning = { showSheet = true },
+                    onOpenAi = { tab = TravelTab.Ai },
+                    onOpenMap = { tab = TravelTab.Map },
+                    onExportTrip = {
+                        val file = exportTripMarkdownFile(context, conversation)
+                        Toast.makeText(context, "宸插鍑哄埌 ${file.absolutePath}", Toast.LENGTH_LONG).show()
+                    },
+                    onShareTrip = {
+                        shareTripMarkdownFile(context, conversation)
+                    },
+                )
 
-            TravelTab.Ai -> IntegratedAiTab(
-                modifier = Modifier.padding(inner),
-                vm = vm,
-                conversation = conversation,
-                nodeId = nodeId,
-                onOpenItinerary = { tab = TravelTab.Itinerary },
-                onOpenMap = { tab = TravelTab.Map },
-                onOpenHotels = { nav.navigate(Screen.TravelHotels(id.toString())) },
-                onOpenFoods = { nav.navigate(Screen.TravelFoods(id.toString())) },
-                onOpenActivities = { nav.navigate(Screen.TravelActivities(id.toString())) },
-            )
+                TravelTab.Ai -> IntegratedAiTab(
+                    modifier = Modifier.padding(inner),
+                    vm = vm,
+                    conversation = conversation,
+                    nodeId = nodeId,
+                    onOpenItinerary = { tab = TravelTab.Itinerary },
+                    onOpenMap = { tab = TravelTab.Map },
+                    onOpenHotels = { nav.navigate(Screen.TravelHotels(id.toString())) },
+                    onOpenFoods = { nav.navigate(Screen.TravelFoods(id.toString())) },
+                    onOpenActivities = { nav.navigate(Screen.TravelActivities(id.toString())) },
+                )
 
-            TravelTab.Mine -> ProfileIntegratedMineTab(
-                modifier = Modifier.padding(inner),
-                conversation = conversation,
-                historyConversationCount = historyConversationCount,
-                historyConversations = historyConversations,
-                historyTrips = historyTrips,
-                favoriteItems = favoriteItems,
-                currentTripSummary = currentTripSummary,
-                onOpenCurrentTrip = { tab = TravelTab.Itinerary },
-                onOpenHistoryConversation = { conversationId ->
-                    nav.navigate(Screen.TravelHub(conversationId, startTab = "ai")) { launchSingleTop = true }
-                },
-                onOpenHistoryTrip = { conversationId ->
-                    nav.navigate(Screen.TravelHub(conversationId, startTab = "itinerary")) { launchSingleTop = true }
-                },
-                onOpenFavoriteItem = { favorite ->
-                    when {
-                        !favorite.conversationId.isNullOrBlank() && !favorite.nodeId.isNullOrBlank() -> {
-                            nav.navigate(Screen.Chat(favorite.conversationId, nodeId = favorite.nodeId)) {
-                                launchSingleTop = true
+                TravelTab.Mine -> ProfileIntegratedMineTab(
+                    modifier = Modifier.padding(inner),
+                    conversation = conversation,
+                    historyConversationCount = historyConversationCount,
+                    historyConversations = historyConversations,
+                    historyTrips = historyTrips,
+                    favoriteItems = favoriteItems,
+                    currentTripSummary = currentTripSummary,
+                    onOpenCurrentTrip = { tab = TravelTab.Itinerary },
+                    onOpenHistoryConversation = { conversationId ->
+                        nav.navigate(Screen.TravelHub(conversationId, startTab = "ai")) { launchSingleTop = true }
+                    },
+                    onOpenHistoryTrip = { conversationId ->
+                        nav.navigate(Screen.TravelHub(conversationId, startTab = "itinerary")) { launchSingleTop = true }
+                    },
+                    onOpenFavoriteItem = { favorite ->
+                        when {
+                            !favorite.conversationId.isNullOrBlank() && !favorite.nodeId.isNullOrBlank() -> {
+                                nav.navigate(Screen.Chat(favorite.conversationId, nodeId = favorite.nodeId)) {
+                                    launchSingleTop = true
+                                }
                             }
-                        }
 
-                        favorite.category == "hotel" -> nav.navigate(Screen.TravelHotels(id.toString())) { launchSingleTop = true }
-                        favorite.category == "food" -> nav.navigate(Screen.TravelFoods(id.toString())) { launchSingleTop = true }
-                        favorite.category == "activity" -> nav.navigate(Screen.TravelActivities(id.toString())) { launchSingleTop = true }
-                        else -> nav.navigate(Screen.Favorite) { launchSingleTop = true }
-                    }
-                },
+                            favorite.category == "hotel" -> nav.navigate(Screen.TravelHotels(id.toString())) { launchSingleTop = true }
+                            favorite.category == "food" -> nav.navigate(Screen.TravelFoods(id.toString())) { launchSingleTop = true }
+                            favorite.category == "activity" -> nav.navigate(Screen.TravelActivities(id.toString())) { launchSingleTop = true }
+                            else -> nav.navigate(Screen.Favorite) { launchSingleTop = true }
+                        }
+                    },
+                )
+            }
+        }
+
+        if (nav.canPop) {
+            BackButton(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, top = 12.dp)
             )
         }
     }
@@ -425,7 +437,7 @@ fun TravelRecommendationPage(id: Uuid, title: String, category: TravelRecommenda
                 subtitle = buildRecommendationSubtitle(category, conversation, ui),
             ) {
                 HeaderActionRow(
-                    leftLabel = "杩斿洖",
+                    leftLabel = "返回",
                     rightLabel = "AI",
                     onLeft = { nav.popBackStack() },
                     onRight = { nav.navigate(Screen.TravelHub(id.toString(), startTab = "ai")) },

@@ -457,6 +457,57 @@ class ChatVM(
         }
     }
 
+    fun updateItineraryItem(
+        dayIndex: Int,
+        itemId: String,
+        timeSlot: String,
+        title: String,
+        description: String,
+        transportHint: String,
+        estimatedCost: String,
+    ) {
+        viewModelScope.launch {
+            val normalizedItemId = itemId.trim()
+            if (normalizedItemId.isBlank()) return@launch
+
+            val currentConversation = conversation.value
+            val currentPlan = currentConversation.travelPlan ?: return@launch
+            var changed = false
+            val updatedDays = currentPlan.itineraryDays.map { day ->
+                if (day.dayIndex != dayIndex) {
+                    day
+                } else {
+                    day.copy(
+                        items = day.items.map { item ->
+                            if (item.id != normalizedItemId) {
+                                item
+                            } else {
+                                changed = true
+                                item.copy(
+                                    timeSlot = timeSlot.trim(),
+                                    title = title.trim(),
+                                    description = description.trim(),
+                                    transportHint = transportHint.trim(),
+                                    estimatedCost = estimatedCost.trim(),
+                                )
+                            }
+                        }
+                    )
+                }
+            }
+            if (!changed) return@launch
+
+            val updatedConversation = currentConversation.copy(
+                travelPlan = currentPlan.copy(
+                    itineraryDays = updatedDays,
+                    generationVersion = currentPlan.generationVersion + 1,
+                )
+            )
+            chatService.updateConversationState(_conversationId) { updatedConversation }
+            chatService.saveConversation(_conversationId, updatedConversation)
+        }
+    }
+
     fun homeWeatherSummary(conversation: Conversation = this.conversation.value): String {
         val realtime = travelHubUiState.weatherSummary.trim()
         val dayOne = conversation.travelPlan?.itineraryDays?.firstOrNull()?.weatherHint?.trim().orEmpty()

@@ -36,14 +36,22 @@ internal class MyWebChromeClient(private val state: WebViewState) : WebChromeCli
 
     override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
         state.pushConsoleMessage(consoleMessage)
-        if (consoleMessage.messageLevel() == ConsoleMessage.MessageLevel.ERROR || consoleMessage.messageLevel() == ConsoleMessage.MessageLevel.WARNING) {
-            Log.e(
-                TAG,
-                "onConsoleMessage:  ${consoleMessage.message()}  ${consoleMessage.lineNumber()}  ${consoleMessage.sourceId()}"
-            )
+        if (consoleMessage.isTailwindCdnProductionWarning()) {
+            return super.onConsoleMessage(consoleMessage)
         }
-        return super.onConsoleMessage(consoleMessage);
+        val logMessage = "onConsoleMessage:  ${consoleMessage.message()}  ${consoleMessage.lineNumber()}  ${consoleMessage.sourceId()}"
+        when (consoleMessage.messageLevel()) {
+            ConsoleMessage.MessageLevel.ERROR -> Log.e(TAG, logMessage)
+            ConsoleMessage.MessageLevel.WARNING -> Log.w(TAG, logMessage)
+            else -> Unit
+        }
+        return super.onConsoleMessage(consoleMessage)
     }
+}
+
+private fun ConsoleMessage.isTailwindCdnProductionWarning(): Boolean {
+    return sourceId().contains("cdn.tailwindcss.com") &&
+        message().contains("should not be used in production")
 }
 
 internal class MyWebViewClient(private val state: WebViewState) : WebViewClient() {

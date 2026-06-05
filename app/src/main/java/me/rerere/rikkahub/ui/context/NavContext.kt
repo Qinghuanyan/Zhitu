@@ -5,6 +5,9 @@ import androidx.navigation3.runtime.NavKey
 import me.rerere.rikkahub.Screen
 
 class Navigator(private val backStack: MutableList<NavKey>) {
+    val canPop: Boolean
+        get() = backStack.size > 1
+
     fun navigate(screen: Screen, builder: NavigateOptionsBuilder.() -> Unit = {}) {
         val options = NavigateOptionsBuilder().apply(builder)
 
@@ -31,7 +34,7 @@ class Navigator(private val backStack: MutableList<NavKey>) {
     }
 
     fun popBackStack() {
-        if (backStack.size > 1) backStack.removeLastOrNull()
+        if (canPop) backStack.removeLastOrNull()
     }
 }
 
