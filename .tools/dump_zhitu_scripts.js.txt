@@ -1,7 +1,0 @@
-JSON.stringify(Array.from(document.scripts).map((script, index) => ({
-  index,
-  type: script.type || "text/javascript",
-  src: script.src || "",
-  textStart: (script.textContent || "").slice(0, 180),
-  textEnd: (script.textContent || "").slice(-180),
-})))

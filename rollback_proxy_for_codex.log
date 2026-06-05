@@ -1,0 +1,50 @@
+===== rollback_proxy_for_codex started at 周五 2026/06/05 21:09:59.08 ===== 
+[1/5] Remove user proxy environment variables...
+The operation completed successfully.
+The operation completed successfully.
+The operation completed successfully.
+ERROR: The system was unable to find the specified registry key or value.
+ERROR: The system was unable to find the specified registry key or value.
+ERROR: The system was unable to find the specified registry key or value.
+ERROR: The system was unable to find the specified registry key or value.
+ERROR: The system was unable to find the specified registry key or value.
+ERROR: The system was unable to find the specified registry key or value.
+ERROR: The system was unable to find the specified registry key or value.
+ERROR: The system was unable to find the specified registry key or value.
+ERROR: The system was unable to find the specified registry key or value.
+[2/5] Clear current shell proxy variables...
+[3/5] Reset WinHTTP proxy...
+
+Current WinHTTP proxy settings:
+
+    Direct access (no proxy server).
+
+[4/5] Remove Git global proxy and ssl override...
+[5/5] Show final state...
+----- user env ----- 
+
+
+ERROR: The system was unable to find the specified registry key or value.
+
+
+ERROR: The system was unable to find the specified registry key or value.
+
+
+ERROR: The system was unable to find the specified registry key or value.
+
+
+ERROR: The system was unable to find the specified registry key or value.
+
+
+ERROR: The system was unable to find the specified registry key or value.
+
+
+ERROR: The system was unable to find the specified registry key or value.
+----- winhttp ----- 
+
+Current WinHTTP proxy settings:
+
+    Direct access (no proxy server).
+
+----- git proxy ----- 
+===== finished at 周五 2026/06/05 21:09:59.64 ===== 

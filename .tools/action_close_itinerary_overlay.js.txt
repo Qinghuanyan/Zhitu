@@ -1,9 +1,0 @@
-(function () {
-  const btn = document.getElementById("itinerary-overlay-close");
-  if (!btn) return "missing-itinerary-overlay-close";
-  btn.click();
-  const overlay = document.getElementById("itinerary-full-overlay");
-  return JSON.stringify({
-    overlayHidden: overlay ? overlay.classList.contains("hidden") : null,
-  });
-})()

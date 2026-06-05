@@ -1,8 +1,0 @@
-(function () {
-  const target = document.querySelector('[data-zhitu-action="generate_plan"]');
-  if (!target) {
-    return "missing-generate-plan";
-  }
-  target.click();
-  return "clicked-generate-plan";
-})()
