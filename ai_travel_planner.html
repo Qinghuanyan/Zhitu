@@ -608,6 +608,26 @@
                 linear-gradient(135deg, rgba(15,23,42,0.18), rgba(15,23,42,0.02)),
                 linear-gradient(135deg, #F0FDF4 0%, #A7F3D0 38%, #67E8F9 72%, #DDD6FE 100%);
         }
+
+        .recommendation-main {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .recommendation-meta {
+            flex: 0 1 42%;
+            max-width: 42%;
+            min-width: 5rem;
+            overflow-wrap: anywhere;
+            word-break: normal;
+        }
+
+        .recommendation-title,
+        .recommendation-subtitle,
+        .recommendation-detail-cell {
+            overflow-wrap: anywhere;
+            word-break: normal;
+        }
     </style>
 </head>
 <body>
@@ -1432,11 +1452,11 @@
             <div class="mt-4 pt-4 border-t border-gray-100 space-y-3">
                 ${item.reason ? `<p class="text-sm text-gray-600 leading-relaxed">${escapeHtml(item.reason)}</p>` : ''}
                 <div class="grid grid-cols-2 gap-2 text-[11px] text-gray-500">
-                    ${item.priceHint ? `<div class="rounded-xl bg-gray-50 px-3 py-2"><span class="block text-gray-400">价格</span><span class="block mt-1 text-gray-700">${escapeHtml(item.priceHint)}</span></div>` : ''}
-                    ${item.ratingText ? `<div class="rounded-xl bg-gray-50 px-3 py-2"><span class="block text-gray-400">评分</span><span class="block mt-1 text-gray-700">${escapeHtml(item.ratingText)}</span></div>` : ''}
-                    ${item.area ? `<div class="rounded-xl bg-gray-50 px-3 py-2"><span class="block text-gray-400">区域</span><span class="block mt-1 text-gray-700">${escapeHtml(item.area)}</span></div>` : ''}
-                    ${item.distanceText ? `<div class="rounded-xl bg-gray-50 px-3 py-2"><span class="block text-gray-400">距离</span><span class="block mt-1 text-gray-700">${escapeHtml(item.distanceText)}</span></div>` : ''}
-                    ${item.inventoryHint ? `<div class="rounded-xl bg-gray-50 px-3 py-2 col-span-2"><span class="block text-gray-400">提示</span><span class="block mt-1 text-gray-700">${escapeHtml(item.inventoryHint)}</span></div>` : ''}
+                    ${item.priceHint ? `<div class="rounded-xl bg-gray-50 px-3 py-2 recommendation-detail-cell"><span class="block text-gray-400">价格</span><span class="block mt-1 text-gray-700">${escapeHtml(item.priceHint)}</span></div>` : ''}
+                    ${item.ratingText ? `<div class="rounded-xl bg-gray-50 px-3 py-2 recommendation-detail-cell"><span class="block text-gray-400">评分</span><span class="block mt-1 text-gray-700">${escapeHtml(item.ratingText)}</span></div>` : ''}
+                    ${item.area ? `<div class="rounded-xl bg-gray-50 px-3 py-2 recommendation-detail-cell"><span class="block text-gray-400">区域</span><span class="block mt-1 text-gray-700">${escapeHtml(item.area)}</span></div>` : ''}
+                    ${item.distanceText ? `<div class="rounded-xl bg-gray-50 px-3 py-2 recommendation-detail-cell"><span class="block text-gray-400">距离</span><span class="block mt-1 text-gray-700">${escapeHtml(item.distanceText)}</span></div>` : ''}
+                    ${item.inventoryHint ? `<div class="rounded-xl bg-gray-50 px-3 py-2 col-span-2 recommendation-detail-cell"><span class="block text-gray-400">提示</span><span class="block mt-1 text-gray-700">${escapeHtml(item.inventoryHint)}</span></div>` : ''}
                 </div>
                 <div class="flex gap-2">
                     <button ${dataAttrs('open_map', { filter: category, poiId: item.id || '' })} class="flex-1 py-2.5 rounded-2xl bg-brand-light text-brand-green text-xs font-bold hover:bg-brand-green hover:text-white transition-colors">地图</button>
@@ -1447,11 +1467,11 @@
         return `
             <div class="bg-white rounded-3xl border border-gray-100 shadow-sm p-4">
                 <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0 flex-1">
-                        <h3 class="text-base font-bold text-gray-900">${escapeHtml(item.title || '推荐项')}</h3>
-                        <p class="text-xs text-gray-500 mt-1">${escapeHtml(item.subtitle || item.area || '')}</p>
+                    <div class="min-w-0 flex-1 recommendation-main">
+                        <h3 class="text-base font-bold text-gray-900 recommendation-title">${escapeHtml(item.title || '推荐项')}</h3>
+                        <p class="text-xs text-gray-500 mt-1 recommendation-subtitle">${escapeHtml(item.subtitle || item.area || '')}</p>
                     </div>
-                    <div class="text-right flex-shrink-0">
+                    <div class="text-right recommendation-meta">
                         ${item.priceHint ? `<p class="text-sm font-bold text-brand-purple">${escapeHtml(item.priceHint)}</p>` : ''}
                         ${item.ratingText ? `<p class="text-[11px] text-yellow-500 mt-1">${escapeHtml(item.ratingText)}</p>` : ''}
                         ${item.distanceText ? `<p class="text-[10px] text-gray-400 mt-1">${escapeHtml(item.distanceText)}</p>` : ''}
