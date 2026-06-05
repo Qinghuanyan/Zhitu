@@ -942,11 +942,8 @@ class ChatService(
         val extractingConversation = getConversationFlow(conversationId).value.let { current ->
             current.copy(travelPlanningState = TravelPlanningState.ExtractingBrief)
         }
-<<<<<<< HEAD
         updateConversation(conversationId, extractingConversation)
         persistConversationProgress(conversationId, extractingConversation, immediate = true)
-=======
->>>>>>> 42ac734b7fb804f86cc77117caef4a05fcde92db
         val content = buildTravelConversationContent(conversation.currentMessages)
         if (content.isBlank()) {
             val latestConversation = conversationRepo.getConversationById(conversationId)
@@ -1190,7 +1187,6 @@ class ChatService(
         val settings = settingsStore.settingsFlow.first()
         val model = settings.getCurrentChatModel()
             ?: throw IllegalStateException("No chat model available")
-<<<<<<< HEAD
         return generateSingleTextWithFallback(
             conversationId = null,
             settings = settings,
@@ -1198,20 +1194,6 @@ class ChatService(
             messages = listOf(UIMessage.user(prompt)),
             title = "规划模型已切换"
         )
-=======
-        val provider = model.findProvider(settings.providers)
-            ?: throw IllegalStateException("Provider not found")
-        val providerHandler = providerManager.getProviderByType(provider)
-        val result = providerHandler.generateText(
-            providerSetting = provider,
-            messages = listOf(UIMessage.user(prompt)),
-            params = TextGenerationParams(
-                model = model,
-                thinkingBudget = 0,
-            ),
-        )
-        return result.choices[0].message?.toText().orEmpty()
->>>>>>> 42ac734b7fb804f86cc77117caef4a05fcde92db
     }
 
     private fun buildTravelConversationContent(messages: List<UIMessage>): String {

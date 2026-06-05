@@ -150,10 +150,7 @@ class GenerationHandler(
         messages: List<UIMessage>,
         onUpdateMessages: suspend (List<UIMessage>) -> Unit,
         onTargetChanged: (Model) -> Unit,
-<<<<<<< HEAD
         onFallback: ((GenerationFallbackNotice) -> Unit)? = null,
-=======
->>>>>>> 42ac734b7fb804f86cc77117caef4a05fcde92db
         transformers: List<MessageTransformer>,
         model: Model,
         tools: List<Tool>,
@@ -173,7 +170,6 @@ class GenerationHandler(
                     )
                 }
                 onTargetChanged(target.model)
-<<<<<<< HEAD
                 withTimeout(PER_MODEL_GENERATION_TIMEOUT_MS) {
                     generateInternal(
                         assistant = assistant,
@@ -200,31 +196,12 @@ class GenerationHandler(
                 } else if (error is CancellationException) {
                     throw error
                 }
-=======
-                generateInternal(
-                    assistant = assistant,
-                    settings = settings,
-                    messages = messages,
-                    onUpdateMessages = onUpdateMessages,
-                    transformers = transformers,
-                    model = target.model,
-                    providerImpl = target.providerImpl,
-                    provider = target.provider,
-                    tools = tools,
-                    memories = memories,
-                    stream = stream,
-                )
-                return target.model
-            } catch (error: Throwable) {
-                if (error is CancellationException) throw error
->>>>>>> 42ac734b7fb804f86cc77117caef4a05fcde92db
                 lastError = error
                 Log.w(
                     TAG,
                     "generateInternalWithFallback: failed on ${target.model.modelId} / ${target.provider.name}",
                     error
                 )
-<<<<<<< HEAD
                 targets.getOrNull(index + 1)?.let { nextTarget ->
                     onFallback?.invoke(
                         GenerationFallbackNotice(
@@ -234,8 +211,6 @@ class GenerationHandler(
                         )
                     )
                 }
-=======
->>>>>>> 42ac734b7fb804f86cc77117caef4a05fcde92db
                 onUpdateMessages(baseMessages)
             }
         }
@@ -319,10 +294,7 @@ class GenerationHandler(
                         )
                     },
                     onTargetChanged = { activeModel = it },
-<<<<<<< HEAD
                     onFallback = onFallback,
-=======
->>>>>>> 42ac734b7fb804f86cc77117caef4a05fcde92db
                     transformers = inputTransformers,
                     model = activeModel,
                     tools = toolsInternal,
